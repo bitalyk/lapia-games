@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Happy Birds</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>🐦 Happy Birds</h1>
+
+    <div id="auth">
+      <input id="username" placeholder="Username" />
+      <input id="password" type="password" placeholder="Password" />
+      <button id="registerBtn">Register</button>
+      <button id="loginBtn">Login</button>
+      <p id="authMsg" style="color:#b00"></p>
+    </div>
+
+    <div id="game" style="display:none;">
+      <div class="row">
+        <div><strong>Coins:</strong> <span id="coins">0</span></div>
+        <div><button id="collectBtn">Collect Eggs</button></div>
+        <div><button id="sellBtn">Sell Eggs</button></div>
+      </div>
+
+      <div class="row">
+        <div style="flex:1">
+          <input id="codeInput" placeholder="Enter redeem code (e.g. REDBIRD)" />
+          <button id="redeemBtn">Redeem</button>
+        </div>
+        <div style="min-width:220px">
+          <div><strong>Next collect:</strong> <span id="nextCollect">Loading...</span></div>
+        </div>
+      </div>
+
+      <h3>Your birds</h3>
+      <div id="birds" class="grid"></div>
+
+      <h3>Eggs (inventory + produced)</h3>
+      <div id="eggs" class="grid"></div>
+
+      <p><small>Notes: Eggs produce for up to 6 hours after the cycle starts. You must wait 6 hours to collect (timer shows remaining). After 6 hours production stops until you press Collect.</small></p>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
