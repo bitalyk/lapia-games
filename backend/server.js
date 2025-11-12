@@ -30,6 +30,7 @@ const CODES = {
   GREENBIRD: "green",
   BLUEBIRD: "blue",
   PURPLEBIRD: "purple",
+  SKIPTIMER: "skip_timer"   // new special code
 };
 
 const SIX_HOURS_SEC = 6 * 60 * 60;
@@ -236,17 +237,31 @@ app.post("/api/game/redeem", async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const key = code.toString().trim().toUpperCase();
-    const color = CODES[key];
-    if (!color) return res.status(400).json({ error: "Invalid code" });
+    const action = CODES[key];
+    if (!action) return res.status(400).json({ error: "Invalid code" });
 
     if (!user.redeemedCodes) user.redeemedCodes = [];
     if (user.redeemedCodes.includes(key)) return res.status(400).json({ error: "Code already used" });
 
-    user.birds[color] = (user.birds[color] || 0) + 1;
+    // special skip timer code
+    if (action === "skip_timer") {
+      const { produced } = computeProducedSince(user.productionStart, user.birds);
+      // add produced eggs to inventory
+      for (const color of Object.keys(BIRDS)) {
+        user.eggs[color] = (user.eggs[color] || 0) + (produced[color] || 0);
+      }
+      // reset productionStart to now (next cycle starts)
+      user.productionStart = new Date();
+      await user.save();
+      return res.json({ success: true, message: "Skip timer applied! Eggs collected.", eggs: user.eggs });
+    }
+
+    // regular bird code
+    user.birds[action] = (user.birds[action] || 0) + 1;
     user.redeemedCodes.push(key);
     await user.save();
 
-    return res.json({ success: true, message: `Redeemed ${key}: +1 ${color} bird`, birds: user.birds });
+    return res.json({ success: true, message: `Redeemed ${key}: +1 ${action} bird`, birds: user.birds });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "server error" });
