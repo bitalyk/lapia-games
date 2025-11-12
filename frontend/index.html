@@ -1,50 +1,58 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Happy Birds</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
+  <title>Happy Birds</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./script.js" defer></script>
 </head>
 <body>
-  <div class="container">
-    <h1>🐦 Happy Birds</h1>
+  <header>
+    <h1>Happy Birds</h1>
+    <button id="logout-btn" style="display:none;">Log out</button>
+  </header>
 
-    <div id="auth">
-      <input id="username" placeholder="Username" />
-      <input id="password" type="password" placeholder="Password" />
-      <button id="registerBtn">Register</button>
+  <!-- Toast container used by script.js -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Login UI -->
+  <main id="login-container">
+    <div>
+      <label>Username: <input id="username" type="text" autocomplete="username"></label>
+    </div>
+    <div>
+      <label>Password: <input id="password" type="password" autocomplete="current-password"></label>
+    </div>
+    <div>
       <button id="loginBtn">Login</button>
-      <p id="authMsg" style="color:#b00"></p>
+      <button id="registerBtn">Register</button>
+    </div>
+    <div id="authMsg" style="margin-top:8px;color:#333"></div>
+  </main>
+
+  <!-- Game UI (hidden until login) -->
+  <section id="game-container" style="display:none;">
+    <div>
+      Coins: <span id="coins">0</span>
+    </div>
+    <div id="birds" style="display:flex;gap:8px;margin-top:12px"></div>
+
+    <div id="eggs" style="display:flex;gap:8px;margin-top:12px"></div>
+
+    <div style="margin-top:12px">
+      Next collect: <span id="nextCollect">--:--:--</span>
     </div>
 
-    <div id="game" style="display:none;">
-      <div class="row">
-        <div><strong>Coins:</strong> <span id="coins">0</span></div>
-        <div><button id="collectBtn">Collect Eggs</button></div>
-        <div><button id="sellBtn">Sell Eggs</button></div>
-      </div>
-
-      <div class="row">
-        <div style="flex:1">
-          <input id="codeInput" placeholder="Enter redeem code (e.g. REDBIRD)" />
-          <button id="redeemBtn">Redeem</button>
-        </div>
-        <div style="min-width:220px">
-          <div><strong>Next collect:</strong> <span id="nextCollect">Loading...</span></div>
-        </div>
-      </div>
-
-      <h3>Your birds</h3>
-      <div id="birds" class="grid"></div>
-
-      <h3>Eggs (inventory + produced)</h3>
-      <div id="eggs" class="grid"></div>
-
-      <p><small>Notes: Eggs produce for up to 6 hours after the cycle starts. You must wait 6 hours to collect (timer shows remaining). After 6 hours production stops until you press Collect.</small></p>
+    <div style="margin-top:12px">
+      <button id="collectBtn">Collect</button>
+      <button id="sellBtn">Sell</button>
     </div>
-  </div>
 
-  <script src="script.js"></script>
+    <div style="margin-top:12px">
+      <input id="codeInput" placeholder="Enter code">
+      <button id="redeemBtn">Redeem</button>
+    </div>
+  </section>
 </body>
 </html>

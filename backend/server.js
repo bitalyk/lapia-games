@@ -1,14 +1,31 @@
 // backend/server.js
+import path from "path";
 import express from "express";
 import cors from "cors";
+import { fileURLToPath } from "url";
 import bcrypt from "bcrypt";
+import mongoose from "mongoose";
+// import your User model (ensure the model file exports default)
 import User from "./models/user.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+
+// serve frontend static files from ../frontend
+const frontendRoot = path.join(__dirname, "..", "frontend");
+console.log("Serving frontend from", frontendRoot);
+app.use(express.static(frontendRoot));
+
+// fallback to index.html
+app.get("/", (req, res) => {
+  res.sendFile(path.join(frontendRoot, "index.html"));
+});
 
 /**
  * Bird configuration: cost / eggsPerSecond / eggsPerCoin (sell rate)
@@ -22,7 +39,7 @@ const BIRDS = {
   purple: { cost: 500000, eps: 50, eggsPerCoin: 10,  label: "Purple" },
 };
 
-// Redeem codes mapping (case-insensitive)
+// Redeem codes mapping (case- insensitive)
 const CODES = {
   REDBIRD: "red",
   ORANGEBIRD: "orange",
@@ -37,15 +54,16 @@ const SIX_HOURS_SEC = 6 * 60 * 60;
 
 // ---------------- helper functions ----------------
 function computeProducedSince(productionStart, birds) {
-  // returns integer produced eggs per color, capping production time to 6 hours
-  const now = Date.now();
-  const start = new Date(productionStart).getTime();
-  let seconds = Math.floor((now - start) / 1000);
-  if (seconds < 0) seconds = 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const startSec = productionStart ? Math.floor(new Date(productionStart).getTime() / 1000) : nowSec;
+  let seconds = nowSec - startSec;
+  if (seconds <= 0) return { produced: {}, seconds: 0 };
   if (seconds > SIX_HOURS_SEC) seconds = SIX_HOURS_SEC;
+
   const produced = {};
   for (const color of Object.keys(BIRDS)) {
     const count = (birds && birds[color]) ? birds[color] : 0;
+    if (count <= 0) { produced[color] = 0; continue; }
     produced[color] = Math.floor(count * BIRDS[color].eps * seconds);
   }
   return { produced, seconds };
@@ -240,23 +258,38 @@ app.post("/api/game/redeem", async (req, res) => {
     const action = CODES[key];
     if (!action) return res.status(400).json({ error: "Invalid code" });
 
-    if (!user.redeemedCodes) user.redeemedCodes = [];
-    if (user.redeemedCodes.includes(key)) return res.status(400).json({ error: "Code already used" });
+    user.redeemedCodes = user.redeemedCodes || [];
+    if (user.redeemedCodes.includes(key)) return res.status(400).json({ error: "Code already redeemed" });
 
-    // special skip timer code
+    // special skip timer code: award full 6 hours of production for each bird type
     if (action === "skip_timer") {
-      const { produced } = computeProducedSince(user.productionStart, user.birds);
-      // add produced eggs to inventory
+      user.eggs = user.eggs || {};
+      const awarded = {};
       for (const color of Object.keys(BIRDS)) {
-        user.eggs[color] = (user.eggs[color] || 0) + (produced[color] || 0);
+        const count = (user.birds && user.birds[color]) ? user.birds[color] : 0;
+        const amount = Math.floor(count * BIRDS[color].eps * SIX_HOURS_SEC);
+        awarded[color] = amount;
+        if (amount > 0) {
+          user.eggs[color] = (user.eggs[color] || 0) + amount;
+        }
       }
-      // reset productionStart to now (next cycle starts)
+
+      user.redeemedCodes.push(key);
+      // reset production start to now (new cycle)
       user.productionStart = new Date();
       await user.save();
-      return res.json({ success: true, message: "Skip timer applied! Eggs collected.", eggs: user.eggs });
+
+      return res.json({
+        success: true,
+        message: `Redeemed ${key}: awarded full 6h production`,
+        awarded,
+        eggs: user.eggs,
+        productionStart: user.productionStart
+      });
     }
 
     // regular bird code
+    user.birds = user.birds || {};
     user.birds[action] = (user.birds[action] || 0) + 1;
     user.redeemedCodes.push(key);
     await user.save();
