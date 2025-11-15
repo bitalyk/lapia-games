@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Menu - Lapia Games</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        /* СТИЛИ ОСТАЮТСЯ ТАКИМИ ЖЕ КАК В ПРЕДЫДУЩЕЙ ВЕРСИИ */
+        /* ... */
+    </style>
+</head>
+<body>
+    <div class="game-menu">
+        <!-- Шапка пользователя -->
+        <div class="user-header">
+            <div class="user-info">
+                <h1>🎮 Welcome, <span id="username-display">Player</span>!</h1>
+                <div class="user-stats">
+                    <div class="stat" id="platform-tokens">🪙 Platform Tokens: 0</div>
+                    <div class="stat" id="total-games">🎯 Games Played: 1</div>
+                    <div class="stat" id="play-time">⏱️ Play Time: 0m</div>
+                </div>
+            </div>
+            <div class="user-actions">
+                <button class="logout-btn">🚪 Logout</button>
+            </div>
+        </div>
+
+        <!-- Платформенные функции -->
+        <div class="platform-features">
+            <div class="feature-card">
+                <h3>🏪 Platform Shop</h3>
+                <p>Buy exclusive items, boosts, and cosmetics with your platform tokens.</p>
+                <button class="feature-btn shop-btn">Visit Shop</button>
+            </div>
+
+            <div class="feature-card">
+                <h3>💱 Currency Exchange</h3>
+                <p>Exchange your game currencies for platform tokens and vice versa.</p>
+                <button class="feature-btn exchange-btn">Exchange Currencies</button>
+            </div>
+
+            <div class="feature-card">
+                <h3>🏆 Achievements</h3>
+                <p>Track your progress and unlock achievements across all games.</p>
+                <button class="feature-btn secondary achievements-btn">View Achievements</button>
+            </div>
+
+            <div class="feature-card">
+                <h3>⚙️ Settings</h3>
+                <p>Customize your platform experience with various settings.</p>
+                <button class="feature-btn secondary settings-btn">Open Settings</button>
+            </div>
+        </div>
+
+        <!-- Игры -->
+        <div class="games-section">
+            <h2>🎮 Available Games</h2>
+            <div class="games-grid">
+                <!-- Happy Birds -->
+                <div class="game-card" data-game="happy-birds">
+                    <div class="game-icon">🐦</div>
+                    <h3>Happy Birds</h3>
+                    <p>Clicker game with birds and eggs. Collect, upgrade, and build your bird empire!</p>
+                    <div class="game-stats">
+                        <small>Last played: <span id="hb-last-played">Never</span></small>
+                    </div>
+                    <button class="play-btn">Play Now</button>
+                </div>
+
+                <!-- Остальные игры (coming soon) -->
+                <div class="game-card disabled">
+                    <div class="game-icon">🎯</div>
+                    <h3>Target Master</h3>
+                    <p>Test your aim in this exciting target shooting game.</p>
+                    <div class="coming-soon">Coming Soon</div>
+                    <button class="play-btn" disabled>Coming Soon</button>
+                </div>
+
+                <div class="game-card disabled">
+                    <div class="game-icon">🧩</div>
+                    <h3>Puzzle Quest</h3>
+                    <p>Challenge your brain with mind-bending puzzles.</p>
+                    <div class="coming-soon">Coming Soon</div>
+                    <button class="play-btn" disabled>Coming Soon</button>
+                </div>
+
+                <div class="game-card disabled">
+                    <div class="game-icon">🏃</div>
+                    <h3>Speed Runner</h3>
+                    <p>Endless runner with power-ups and obstacles.</p>
+                    <div class="coming-soon">Coming Soon</div>
+                    <button class="play-btn" disabled>Coming Soon</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Выход -->
+        <div class="logout-section">
+            <button class="logout-btn">🚪 Logout from Platform</button>
+        </div>
+    </div>
+
+    <script>
+        // ✅ ПРОСТОЙ СКРИПТ ДЛЯ МЕНЮ - события обрабатываются через Auth Manager
+        console.log('🎮 Game Menu loaded');
+        
+        // Базовая инициализация - основная логика в Auth Manager
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🎮 Game Menu DOM ready');
+            
+            // Обновляем информацию пользователя если authManager доступен
+            if (window.authManager && window.authManager.currentUser) {
+                updateUserInfo();
+            }
+            
+            // Простая функция обновления информации
+            function updateUserInfo() {
+                const username = localStorage.getItem('clicker_user') || 'Player';
+                const platformData = JSON.parse(localStorage.getItem('platform_profile_' + username) || '{}');
+                const currencies = JSON.parse(localStorage.getItem('currency_balances_' + username) || '{}');
+                
+                // Обновляем имя пользователя
+                const usernameDisplay = document.getElementById('username-display');
+                if (usernameDisplay) {
+                    usernameDisplay.textContent = username;
+                }
+                
+                // Обновляем токены платформы
+                const platformTokens = document.getElementById('platform-tokens');
+                if (platformTokens) {
+                    const tokens = currencies.platform || 0;
+                    platformTokens.textContent = `🪙 Platform Tokens: ${tokens}`;
+                }
+            }
+            
+            // Вызываем обновление
+            updateUserInfo();
+        });
+    </script>
+</body>
+</html>

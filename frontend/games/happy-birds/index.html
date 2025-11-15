@@ -1,0 +1,49 @@
+<div class="happy-birds-game">
+    <div class="game-header">
+        <h2>🐦 Happy Birds</h2>
+        <button id="hb-back-btn" class="back-button">← Menu</button>
+    </div>
+
+    <!-- Canvas для анимаций -->
+    <div class="animation-area">
+        <canvas id="birds-canvas"></canvas>
+    </div>
+
+    <!-- Статистика -->
+    <div class="game-stats">
+        <div class="stat-card">
+            <h3>Coins</h3>
+            <div id="hb-coins" class="stat-value">0</div>
+        </div>
+        <div class="stat-card">
+            <h3>Total Birds</h3>
+            <div id="hb-total-birds" class="stat-value">0</div>
+        </div>
+        <div class="stat-card">
+            <h3>Eggs Rate</h3>
+            <div id="hb-egg-rate" class="stat-value">0/sec</div>
+        </div>
+    </div>
+
+    <!-- Управление -->
+    <div class="game-controls">
+        <button id="hb-collect-btn" class="control-btn collect">Collect Eggs</button>
+        <button id="hb-sell-btn" class="control-btn sell">Sell All Eggs</button>
+    </div>
+
+    <!-- Птицы -->
+    <div class="birds-section">
+        <h3>Your Birds</h3>
+        <div id="hb-birds-grid" class="birds-grid">
+            <!-- Динамически генерируется -->
+        </div>
+    </div>
+
+    <!-- Яйца -->
+    <div class="eggs-section">
+        <h3>Egg Inventory</h3>
+        <div id="hb-eggs-grid" class="eggs-grid">
+            <!-- Динамически генерируется -->
+        </div>
+    </div>
+</div>

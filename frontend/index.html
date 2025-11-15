@@ -3,56 +3,83 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Happy Birds</title>
+  <title>Lapia Games - Platform</title>
   <link rel="stylesheet" href="./style.css">
-  <script src="./script.js" defer></script>
 </head>
 <body>
   <header>
-    <h1>Happy Birds</h1>
-    <button id="logout-btn" style="display:none;">Log out</button>
+    <h1>🎮 Lapia Games Platform</h1>
+    <div id="user-info" style="display: none;">
+      Welcome, <span id="header-username"></span>!
+      <button id="header-logout">Logout</button>
+    </div>
   </header>
 
-  <!-- Toast container used by script.js -->
+  <!-- Toast container -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <!-- Login UI -->
-  <main id="login-container">
-    <div>
-      <label>Username: <input id="username" type="text" autocomplete="username"></label>
+  <!-- Контейнер аутентификации -->
+  <main id="auth-container">
+    <div class="auth-wrapper">
+      <div class="auth-card">
+        <h2>Welcome to Lapia Games</h2>
+        <p>Join our gaming platform with cross-game economy!</p>
+        
+        <div id="login-container">
+          <div class="input-group">
+            <label>Username:</label>
+            <input id="username" type="text" autocomplete="username" placeholder="Enter your username">
+          </div>
+          <div class="input-group">
+            <label>Password:</label>
+            <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password">
+          </div>
+          <div class="auth-buttons">
+            <button id="loginBtn" class="auth-btn primary">Login</button>
+            <button id="registerBtn" class="auth-btn secondary">Register</button>
+          </div>
+          <div id="authMsg" class="auth-message"></div>
+        </div>
+      </div>
+      
+      <div class="platform-features">
+        <h3>Platform Features:</h3>
+        <ul>
+          <li>🎮 Multiple games in one platform</li>
+          <li>🪙 Cross-game currency system</li>
+          <li>🏪 Unified marketplace</li>
+          <li>🏆 Achievement system</li>
+          <li>🔐 Secure authentication</li>
+        </ul>
+      </div>
     </div>
-    <div>
-      <label>Password: <input id="password" type="password" autocomplete="current-password"></label>
-    </div>
-    <div>
-      <button id="loginBtn">Login</button>
-      <button id="registerBtn">Register</button>
-    </div>
-    <div id="authMsg" style="margin-top:8px;color:#333"></div>
   </main>
 
-  <!-- Game UI (hidden until login) -->
-  <section id="game-container" style="display:none;">
-    <div>
-      Coins: <span id="coins">0</span>
-    </div>
-    <div id="birds" style="display:flex;gap:8px;margin-top:12px"></div>
-
-    <div id="eggs" style="display:flex;gap:8px;margin-top:12px"></div>
-
-    <div style="margin-top:12px">
-      Next collect: <span id="nextCollect">--:--:--</span>
-    </div>
-
-    <div style="margin-top:12px">
-      <button id="collectBtn">Collect</button>
-      <button id="sellBtn">Sell</button>
-    </div>
-
-    <div style="margin-top:12px">
-      <input id="codeInput" placeholder="Enter code">
-      <button id="redeemBtn">Redeem</button>
-    </div>
+  <!-- Игровое меню -->
+  <section id="game-menu" style="display:none;">
+    <!-- Загружается динамически -->
   </section>
+
+  <!-- Игровая область -->
+  <div id="game-area" style="display:none;"></div>
+
+  <!-- В конце body в frontend/index.html -->
+<script src="./js/game-manager.js"></script>
+<script type="module">
+    // ✅ Загружаем модули в правильном порядке
+    import { AuthManager } from './auth/auth-manager.js';
+    import { CurrencyManager } from './shop/currency-manager.js';
+    import { CryptoShop } from './shop/crypto-shop.js';
+    import { ShopUI } from './shop/shop-ui.js';
+    
+    // Инициализируем системы
+    window.authManager = new AuthManager();
+    window.currencyManager = new CurrencyManager();
+    window.cryptoShop = new CryptoShop();
+    window.shopUI = new ShopUI();
+    
+    console.log('✅ All systems initialized');
+</script>
+<script src="./script.js"></script>
 </body>
 </html>

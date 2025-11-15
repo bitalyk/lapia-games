@@ -1,0 +1,165 @@
+.happy-birds-game {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.back-button {
+    padding: 8px 16px;
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.back-button:hover {
+    background: #5a6268;
+}
+
+.animation-area {
+    background: linear-gradient(180deg, #87CEEB 0%, #98FB98 100%);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+#birds-canvas {
+    width: 100%;
+    height: 200px;
+    display: block;
+}
+
+.game-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.stat-card h3 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: #666;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2c5530;
+}
+
+.game-controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.control-btn {
+    flex: 1;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.control-btn.collect {
+    background: #ffd54f;
+    color: #333;
+}
+
+.control-btn.collect:hover {
+    background: #ffca28;
+    transform: translateY(-2px);
+}
+
+.control-btn.sell {
+    background: #4caf50;
+    color: white;
+}
+
+.control-btn.sell:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+}
+
+.birds-section, .eggs-section {
+    margin-bottom: 25px;
+}
+
+.birds-section h3, .eggs-section h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.birds-grid, .eggs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.bird-card, .egg-card {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-left: 4px solid;
+}
+
+.bird-card[data-color="red"] { border-left-color: #ff6b6b; }
+.bird-card[data-color="orange"] { border-left-color: #ffa726; }
+.bird-card[data-color="yellow"] { border-left-color: #ffd54f; }
+.bird-card[data-color="green"] { border-left-color: #66bb6a; }
+.bird-card[data-color="blue"] { border-left-color: #42a5f5; }
+.bird-card[data-color="purple"] { border-left-color: #ab47bc; }
+
+.bird-card h4, .egg-card h4 {
+    margin: 0 0 8px 0;
+    text-transform: capitalize;
+}
+
+.bird-stats, .egg-stats {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 10px;
+}
+
+.hb-buy-btn {
+    width: 100%;
+    padding: 8px 12px;
+    background: #2196f3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.hb-buy-btn:hover {
+    background: #1976d2;
+}
+
+.hb-buy-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}

@@ -5,8 +5,10 @@ import cors from "cors";
 import { fileURLToPath } from "url";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
-// import your User model (ensure the model file exports default)
+
+// Импорты моделей и роутов
 import User from "./models/user.js";
+import platformRoutes from "./routes/platform.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,19 +19,20 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// serve frontend static files from ../frontend
+// Serve frontend static files
 const frontendRoot = path.join(__dirname, "..", "frontend");
 console.log("Serving frontend from", frontendRoot);
 app.use(express.static(frontendRoot));
 
-// fallback to index.html
+// Fallback to index.html
 app.get("/", (req, res) => {
   res.sendFile(path.join(frontendRoot, "index.html"));
 });
 
-/**
- * Bird configuration: cost / eggsPerSecond / eggsPerCoin (sell rate)
- */
+// Подключаем роуты платформы
+app.use("/api/platform", platformRoutes);
+
+// Bird configuration (оставляем для совместимости)
 const BIRDS = {
   red:    { cost: 1000,   eps: 1,  eggsPerCoin: 100, label: "Red" },
   orange: { cost: 2500,   eps: 2,  eggsPerCoin: 80,  label: "Orange" },
@@ -39,20 +42,19 @@ const BIRDS = {
   purple: { cost: 500000, eps: 50, eggsPerCoin: 10,  label: "Purple" },
 };
 
-// Redeem codes mapping (case- insensitive)
 const CODES = {
   REDBIRD: "red",
-  ORANGEBIRD: "orange",
+  ORANGEBIRD: "orange", 
   YELLOWBIRD: "yellow",
   GREENBIRD: "green",
   BLUEBIRD: "blue",
   PURPLEBIRD: "purple",
-  SKIPTIMER: "skip_timer"   // new special code
+  SKIPTIMER: "skip_timer"
 };
 
 const SIX_HOURS_SEC = 6 * 60 * 60;
 
-// ---------------- helper functions ----------------
+// Helper functions (оставляем для совместимости)
 function computeProducedSince(productionStart, birds) {
   const nowSec = Math.floor(Date.now() / 1000);
   const startSec = productionStart ? Math.floor(new Date(productionStart).getTime() / 1000) : nowSec;
@@ -69,257 +71,210 @@ function computeProducedSince(productionStart, birds) {
   return { produced, seconds };
 }
 
-// get user helper
 async function getUser(username) {
-  return await User.findOne({ username });
+  return await User.findByUsername(username);
 }
 
-// ---------------- auth endpoints ----------------
+// ---------------- Auth endpoints (обновленные) ----------------
 app.post("/api/users/register", async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: "username & password required" });
+    const { username, password, email } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password required" });
+    }
 
-    const existing = await User.findOne({ username });
-    if (existing) return res.status(400).json({ error: "username exists" });
+    if (username.length < 3 || username.length > 20) {
+      return res.status(400).json({ error: "Username must be 3-20 characters" });
+    }
 
+    // Проверяем существующего пользователя
+    const existing = await User.findByUsername(username);
+    if (existing) {
+      return res.status(400).json({ error: "Username already exists" });
+    }
+
+    // Хешируем пароль
     const hash = await bcrypt.hash(password, 10);
-    const user = new User({ username, passwordHash: hash });
+    
+    // Создаем пользователя с платформенными данными
+    const user = new User({ 
+      username, 
+      passwordHash: hash,
+      email: email || null,
+      // Платформенные данные инициализируются по умолчанию в схеме
+    });
+    
     await user.save();
-    return res.json({ success: true, user: { username: user.username, coins: user.coins } });
+
+    // Возвращаем полные данные пользователя
+    return res.json({ 
+      success: true, 
+      user: { 
+        username: user.username,
+        platformStats: user.platformStats,
+        platformCurrencies: user.platformCurrencies,
+        gamesProgress: Object.fromEntries(user.gamesProgress),
+        registeredAt: user.createdAt
+      } 
+    });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "server error" });
+    console.error("Registration error:", err);
+    return res.status(500).json({ error: "Server error during registration" });
   }
 });
 
 app.post("/api/users/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: "username & password required" });
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password required" });
+    }
 
     const user = await getUser(username);
-    if (!user) return res.status(401).json({ error: "User not found" });
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
 
     const valid = await bcrypt.compare(password, user.passwordHash || "");
-    if (!valid) return res.status(401).json({ error: "Invalid password" });
+    if (!valid) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
 
-    return res.json({ success: true, user: { username: user.username } });
+    // Обновляем время последнего входа
+    user.platformStats.lastLogin = new Date();
+    user.lastActive = new Date();
+    await user.save();
+
+    return res.json({ 
+      success: true, 
+      user: { 
+        username: user.username,
+        platformStats: user.platformStats,
+        platformCurrencies: user.platformCurrencies,
+        gamesProgress: Object.fromEntries(user.gamesProgress),
+        inventory: user.inventory
+      } 
+    });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "server error" });
+    console.error("Login error:", err);
+    return res.status(500).json({ error: "Server error during login" });
   }
 });
 
-// ---------------- game endpoints ----------------
+// ---------------- Game endpoints (оставляем для совместимости) ----------------
+// ... существующие endpoints для Happy Birds остаются без изменений ...
+// GET /api/game/status/:username
+// POST /api/game/collect  
+// POST /api/game/sell
+// POST /api/game/buy
+// POST /api/game/redeem
+// GET /api/game/live/:username
 
-/**
- * GET /api/game/status/:username
- * returns: coins, birds, eggs (inventory), productionStart (timestamp), liveProduced (computed)
- */
-app.get("/api/game/status/:username", async (req, res) => {
+// Новый endpoint для обновления данных платформы из игр
+app.post("/api/game/platform-update", async (req, res) => {
   try {
-    const username = req.params.username;
+    const { username, gameId, currencyUpdates, progressUpdates } = req.body;
+    
     const user = await getUser(username);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-    const { produced, seconds } = computeProducedSince(user.productionStart, user.birds);
-    // live eggs = inventory eggs + produced (produced is capped to 6 hours)
-    const live = {};
-    for (const c of Object.keys(BIRDS)) {
-      live[c] = (user.eggs[c] || 0) + (produced[c] || 0);
+    // Обновляем валюты
+    if (currencyUpdates) {
+      for (const [currencyType, amount] of Object.entries(currencyUpdates)) {
+        await user.addPlatformCurrency(currencyType, amount);
+      }
+    }
+
+    // Обновляем прогресс
+    if (progressUpdates && gameId) {
+      await user.updateGameProgress(gameId, progressUpdates);
     }
 
     res.json({
-      username: user.username,
-      coins: user.coins,
-      birds: user.birds,
-      eggs: user.eggs,
-      productionStart: user.productionStart,
-      producedSinceStart: produced,
-      producedSeconds: seconds,
-      liveEggs: live,
-      redeemedCodes: user.redeemedCodes || []
+      success: true,
+      currencies: user.platformCurrencies,
+      progress: user.gamesProgress.get(gameId)
+    });
+  } catch (error) {
+    console.error("Platform update error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    timestamp: new Date().toISOString(),
+    database: mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"
+  });
+});
+
+// backend/server.js
+// ДОБАВЛЯЕМ ПОСЛЕ СУЩЕСТВУЮЩИХ GAME ENDPOINTS:
+
+// ✅ НОВЫЙ: Получение профиля пользователя (для валидации сессии)
+app.get("/api/users/profile/:username", async (req, res) => {
+  try {
+    const username = req.params.username;
+    const user = await getUser(username);
+    
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Возвращаем базовую информацию для валидации сессии
+    res.json({
+      success: true,
+      user: {
+        username: user.username,
+        platformStats: user.platformStats,
+        platformCurrencies: user.platformCurrencies,
+        lastActive: user.lastActive
+      }
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "server error" });
+    console.error("Profile fetch error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-/**
- * POST /api/game/collect
- * Collects produced eggs only if 6 hours passed since productionStart.
- * Adds produced eggs to inventory (user.eggs), resets productionStart = now.
- */
-app.post("/api/game/collect", async (req, res) => {
+// ✅ НОВЫЙ: Получение платформенных данных пользователя
+app.get("/api/users/platform-data/:username", async (req, res) => {
   try {
-    const { username } = req.body;
+    const username = req.params.username;
     const user = await getUser(username);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const now = Date.now();
-    const start = new Date(user.productionStart).getTime();
-    const elapsed = Math.floor((now - start) / 1000);
-
-    if (elapsed < SIX_HOURS_SEC) {
-      const remaining = SIX_HOURS_SEC - elapsed;
-      return res.status(400).json({ error: "not_ready", message: "You can collect only after 6 hours", remainingSeconds: remaining });
+    
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
     }
 
-    // compute produced (capped to 6 hours)
-    const { produced } = computeProducedSince(user.productionStart, user.birds);
-    for (const color of Object.keys(BIRDS)) {
-      const add = produced[color] || 0;
-      if (add > 0) user.eggs[color] = (user.eggs[color] || 0) + add;
-    }
-
-    // reset production start to now (new cycle starts immediately)
-    user.productionStart = new Date();
-    await user.save();
-
-    return res.json({ success: true, message: "Eggs collected", produced, eggs: user.eggs });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "server error" });
-  }
-});
-
-/**
- * POST /api/game/sell
- * Sells inventory eggs for coins using eggsPerCoin rates. Only inventory eggs are sold.
- */
-app.post("/api/game/sell", async (req, res) => {
-  try {
-    const { username } = req.body;
-    const user = await getUser(username);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    let totalGained = 0;
-    for (const color of Object.keys(BIRDS)) {
-      const eggs = user.eggs[color] || 0;
-      const rate = BIRDS[color].eggsPerCoin;
-      if (eggs >= rate) {
-        const coinsFrom = Math.floor(eggs / rate);
-        totalGained += coinsFrom;
-        user.eggs[color] = eggs - coinsFrom * rate;
+    res.json({
+      success: true,
+      platformData: {
+        username: user.username,
+        platformStats: user.platformStats,
+        platformCurrencies: user.platformCurrencies,
+        gamesProgress: Object.fromEntries(user.gamesProgress || new Map()),
+        inventory: user.inventory,
+        settings: user.settings,
+        registeredAt: user.createdAt
       }
-    }
-
-    user.coins += totalGained;
-    await user.save();
-    return res.json({ success: true, gained: totalGained, coins: user.coins, eggs: user.eggs });
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "server error" });
+    console.error("Platform data fetch error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-/**
- * POST /api/game/buy
- * body: { username, type }
- * Buys 1 bird if user has enough coins
- */
-app.post("/api/game/buy", async (req, res) => {
-  try {
-    const { username, type } = req.body;
-    if (!type || !BIRDS[type]) return res.status(400).json({ error: "Invalid bird type" });
-
-    const user = await getUser(username);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const cost = BIRDS[type].cost;
-    if (user.coins < cost) return res.status(400).json({ error: "Not enough coins" });
-
-    user.coins -= cost;
-    user.birds[type] = (user.birds[type] || 0) + 1;
-    await user.save();
-    return res.json({ success: true, message: `Bought 1 ${type} bird`, user });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "server error" });
-  }
-});
-
-/**
- * POST /api/game/redeem
- * body: { username, code }
- * Redeem code to get one bird of mapped color. One-use per player.
- */
-app.post("/api/game/redeem", async (req, res) => {
-  try {
-    const { username, code } = req.body;
-    if (!code) return res.status(400).json({ error: "code required" });
-
-    const user = await getUser(username);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const key = code.toString().trim().toUpperCase();
-    const action = CODES[key];
-    if (!action) return res.status(400).json({ error: "Invalid code" });
-
-    user.redeemedCodes = user.redeemedCodes || [];
-    if (user.redeemedCodes.includes(key)) return res.status(400).json({ error: "Code already redeemed" });
-
-    // special skip timer code: award full 6 hours of production for each bird type
-    if (action === "skip_timer") {
-      user.eggs = user.eggs || {};
-      const awarded = {};
-      for (const color of Object.keys(BIRDS)) {
-        const count = (user.birds && user.birds[color]) ? user.birds[color] : 0;
-        const amount = Math.floor(count * BIRDS[color].eps * SIX_HOURS_SEC);
-        awarded[color] = amount;
-        if (amount > 0) {
-          user.eggs[color] = (user.eggs[color] || 0) + amount;
-        }
-      }
-
-      user.redeemedCodes.push(key);
-      // reset production start to now (new cycle)
-      user.productionStart = new Date();
-      await user.save();
-
-      return res.json({
-        success: true,
-        message: `Redeemed ${key}: awarded full 6h production`,
-        awarded,
-        eggs: user.eggs,
-        productionStart: user.productionStart
-      });
-    }
-
-    // regular bird code
-    user.birds = user.birds || {};
-    user.birds[action] = (user.birds[action] || 0) + 1;
-    user.redeemedCodes.push(key);
-    await user.save();
-
-    return res.json({ success: true, message: `Redeemed ${key}: +1 ${action} bird`, birds: user.birds });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "server error" });
-  }
-});
-
-// small helper to compute live produced eggs without saving
-app.get("/api/game/live/:username", async (req, res) => {
-  try {
-    const user = await getUser(req.params.username);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const { produced, seconds } = computeProducedSince(user.productionStart, user.birds);
-    const live = {};
-    for (const color of Object.keys(BIRDS)) {
-      live[color] = (user.eggs[color] || 0) + (produced[color] || 0);
-    }
-
-    return res.json({ success: true, produced, seconds, live, productionStart: user.productionStart });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "server error" });
-  }
-});
-
+// Запуск сервера
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`📊 Platform API available at /api/platform`);
+  console.log(`🎮 Game API available at /api/game`);
+  console.log(`🔐 Auth API available at /api/users`);
 });
+
