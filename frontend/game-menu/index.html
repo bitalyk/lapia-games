@@ -62,7 +62,7 @@
                 <div class="game-card" data-game="happy-birds">
                     <div class="game-icon">🐦</div>
                     <h3>Happy Birds</h3>
-                    <p>Clicker game with birds and eggs. Collect, upgrade, and build your bird empire!</p>
+                    <p>Lapia Games with birds and eggs. Collect, upgrade, and build your bird empire!</p>
                     <div class="game-stats">
                         <small>Last played: <span id="hb-last-played">Never</span></small>
                     </div>
@@ -117,7 +117,7 @@
             
             // Простая функция обновления информации
             function updateUserInfo() {
-                const username = localStorage.getItem('clicker_user') || 'Player';
+                const username = localStorage.getItem('lapia_games_user') || 'Player';
                 const platformData = JSON.parse(localStorage.getItem('platform_profile_' + username) || '{}');
                 const currencies = JSON.parse(localStorage.getItem('currency_balances_' + username) || '{}');
                 

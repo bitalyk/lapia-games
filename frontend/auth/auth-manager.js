@@ -397,7 +397,7 @@ export class AuthManager {
         
         // Очищаем хранилище
         localStorage.removeItem('platform_user');
-        localStorage.removeItem('clicker_user');
+        localStorage.removeItem('lapia_games_user');
         
         // Очищаем сессии для всех пользователей
         Object.keys(localStorage).forEach(key => {
@@ -598,7 +598,7 @@ removeMenuEventListeners() {
             }
             
             // Проверяем localStorage как fallback
-            const username = this.currentUser?.username || localStorage.getItem('clicker_user');
+            const username = this.currentUser?.username || localStorage.getItem('lapia_games_user');
             if (username) {
                 const saved = localStorage.getItem(`happybirds_save_${username}`);
                 if (saved) {

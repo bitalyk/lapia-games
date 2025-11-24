@@ -90,7 +90,7 @@ export class CryptoShop {
 
     // Доставка игрового предмета
     async deliverGameItem(item, quantity) {
-        const username = localStorage.getItem('clicker_user');
+        const username = localStorage.getItem('lapia_games_user');
         
         try {
             // Отправляем на бэкенд информацию о покупке

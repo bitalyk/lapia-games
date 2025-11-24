@@ -5,10 +5,13 @@ import cors from "cors";
 import { fileURLToPath } from "url";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
+import dotenv from 'dotenv';
 
 // Импорты моделей и роутов
 import User from "./models/user.js";
 import platformRoutes from "./routes/platform.js";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

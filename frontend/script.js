@@ -32,43 +32,38 @@ function logout() {
 
 // Toast функция (оставляем для совместимости)
 function showToast(message, type = "info", duration = 3000) {
-  try {
-    let container = document.getElementById("toast-container");
-    if (!container) {
-      container = document.createElement("div");
-      container.id = "toast-container";
-      document.body.appendChild(container);
-    }
-
-    const el = document.createElement("div");
-    el.className = "toast " + (type || "info");
-    el.textContent = message;
-    container.appendChild(el);
-
-    // force reflow then show
-    el.offsetHeight;
-    el.classList.add("show");
-
-    const hideTimeout = setTimeout(() => {
-      el.classList.remove("show");
-      el.classList.add("hide");
-      setTimeout(() => {
-        if (el.parentNode) el.parentNode.removeChild(el);
-      }, 420);
-    }, duration);
-
-    el.addEventListener("click", () => {
-      clearTimeout(hideTimeout);
-      el.classList.remove("show");
-      el.classList.add("hide");
-      setTimeout(() => {
-        if (el.parentNode) el.parentNode.removeChild(el);
-      }, 220);
-    });
-  } catch (e) {
-    console.error("toast failed", e);
-    window.__native_alert__?.(message) ?? window.alert(message);
+  let container = document.getElementById("toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toast-container";
+    document.body.appendChild(container);
   }
+
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  container.appendChild(el);
+
+  // Force reflow then show
+  el.offsetHeight;
+  el.classList.add("show");
+
+  const hideTimeout = setTimeout(() => {
+    el.classList.remove("show");
+    el.classList.add("hide");
+    setTimeout(() => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 420);
+  }, duration);
+
+  el.addEventListener("click", () => {
+    clearTimeout(hideTimeout);
+    el.classList.remove("show");
+    el.classList.add("hide");
+    setTimeout(() => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 220);
+  });
 }
 
 // Совместимость со старой системой

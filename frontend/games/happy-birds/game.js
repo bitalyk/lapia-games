@@ -374,7 +374,7 @@ export default class HappyBirdsGame {
             eggs: this.eggs
         };
         
-        const username = localStorage.getItem('clicker_user');
+        const username = localStorage.getItem('lapia_games_user');
         if (username) {
             localStorage.setItem(`happybirds_save_${username}`, JSON.stringify(gameState));
         }
@@ -384,7 +384,7 @@ export default class HappyBirdsGame {
 
     // ✅ Загрузить прогресс игры
     async loadProgress() {
-        const username = localStorage.getItem('clicker_user');
+        const username = localStorage.getItem('lapia_games_user');
         if (username) {
             const saved = localStorage.getItem(`happybirds_save_${username}`);
             if (saved) {

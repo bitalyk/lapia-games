@@ -1,11 +1,11 @@
 # lapia-games
 
-This repository is a small Express + MongoDB clicker game (Happy Birds).
+This repository is a small Express + MongoDB lapia-games (Happy Birds).
 Keep guidance short and actionable so an AI agent can be productive quickly.
 
 Key points (big picture)
 - Backend: `backend/server.js` (ESM). Express serves a REST API under `/api` and static files from `frontend/`.
-- Database: MongoDB via `backend/db.js`. Default URI: `mongodb://127.0.0.1:27017/clickerdb` or set `MONGO_URI`.
+- Database: MongoDB via `backend/db.js`. Default URI: `mongodb://127.0.0.1:27017/lapia-games` or set `MONGO_URI`.
 - Models: `backend/models/user.js` contains the User schema (birds, eggs, coins, productionStart, redeemedCodes).
 - Frontend: static single-page UI in `frontend/` (`index.html`, `script.js`, `style.css`) — it talks to the API at `http://localhost:3000/api`.
 
