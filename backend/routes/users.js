@@ -1,29 +1,65 @@
 import express from "express";
-import bcrypt from "bcrypt";
 import User from "../models/user.js";
 
 const router = express.Router();
 
-router.post("/register", async (req, res) => {
-  const { username, password } = req.body;
-  const hash = await bcrypt.hash(password, 10);
-  const existing = await User.findOne({ username });
-  if (existing) return res.status(400).json({ error: "Username already exists" });
+// Helper function to get user
+async function getUser(username) {
+  return await User.findByUsername(username);
+}
 
-  const user = new User({ username, passwordHash: hash });
-  await user.save();
-  res.json({ success: true });
+// GET /api/users/profile/:username
+router.get("/profile/:username", async (req, res) => {
+  try {
+    const username = req.params.username;
+    const user = await getUser(username);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Return basic info for session validation
+    res.json({
+      success: true,
+      user: {
+        username: user.username,
+        platformStats: user.platformStats,
+        platformCurrencies: user.platformCurrencies,
+        lastActive: user.lastActive
+      }
+    });
+  } catch (err) {
+    console.error("Profile fetch error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
-router.post("/login", async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ username });
-  if (!user) return res.status(401).json({ error: "User not found" });
+// GET /api/users/platform-data/:username
+router.get("/platform-data/:username", async (req, res) => {
+  try {
+    const username = req.params.username;
+    const user = await getUser(username);
 
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) return res.status(401).json({ error: "Invalid password" });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-  res.json({ success: true, user });
+    res.json({
+      success: true,
+      platformData: {
+        username: user.username,
+        platformStats: user.platformStats,
+        platformCurrencies: user.platformCurrencies,
+        gamesProgress: Object.fromEntries(user.gamesProgress || new Map()),
+        inventory: user.inventory,
+        settings: user.settings,
+        registeredAt: user.createdAt
+      }
+    });
+  } catch (err) {
+    console.error("Platform data fetch error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 export default router;
