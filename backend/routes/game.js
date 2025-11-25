@@ -26,18 +26,20 @@ const CODES = {
 const SIX_HOURS_SEC = 6 * 60 * 60;
 
 // Helper functions
-function computeProducedSince(productionStart, birds) {
+function computeProducedSince(lastSaveTime, savedProduced, birds) {
+  if (!lastSaveTime) return { produced: {}, seconds: 0 };
+
   const nowSec = Math.floor(Date.now() / 1000);
-  const startSec = productionStart ? Math.floor(new Date(productionStart).getTime() / 1000) : nowSec;
-  let seconds = nowSec - startSec;
-  if (seconds <= 0) return { produced: {}, seconds: 0 };
+  const saveSec = Math.floor(new Date(lastSaveTime).getTime() / 1000);
+  let seconds = nowSec - saveSec;
+  if (seconds <= 0) return { produced: savedProduced || {}, seconds: 0 };
   if (seconds > SIX_HOURS_SEC) seconds = SIX_HOURS_SEC;
 
-  const produced = {};
+  const produced = { ...(savedProduced || {}) };
   for (const color of Object.keys(BIRDS)) {
     const count = (birds && birds[color]) ? birds[color] : 0;
-    if (count <= 0) { produced[color] = 0; continue; }
-    produced[color] = Math.floor(count * BIRDS[color].eps * seconds);
+    if (count <= 0) { produced[color] = produced[color] || 0; continue; }
+    produced[color] = (produced[color] || 0) + Math.floor(count * BIRDS[color].eps * seconds);
   }
   return { produced, seconds };
 }
@@ -54,16 +56,47 @@ router.get("/status/:username", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const { produced } = computeProducedSince(user.productionStart, user.birds);
+    // Reset corrupted data
+    if (!user.eggs || typeof user.eggs !== 'object') {
+      user.eggs = {};
+      await user.save();
+    }
+    if (!user.savedProduced || typeof user.savedProduced !== 'object') {
+      user.savedProduced = {};
+      await user.save();
+    }
+
+    // Handle truck travel completion
+    if (user.truckLocation === 'traveling_to_city' && user.truckDepartureTime) {
+      const travelTime = Date.now() - user.truckDepartureTime.getTime();
+      if (travelTime >= 60 * 60 * 1000) { // 1 hour
+        user.truckLocation = 'city';
+        user.truckDepartureTime = null;
+        await user.save();
+      }
+    } else if (user.truckLocation === 'traveling_to_farm' && user.truckDepartureTime) {
+      const travelTime = Date.now() - user.truckDepartureTime.getTime();
+      if (travelTime >= 60 * 60 * 1000) { // 1 hour
+        user.truckLocation = 'farm';
+        user.truckDepartureTime = null;
+        await user.save();
+      }
+    }
+
     res.json({
+      success: true,
       coins: user.coins,
       birds: user.birds,
       eggs: user.eggs,
-      produced,
-      productionStart: user.productionStart
+      savedProduced: user.savedProduced || {},
+      lastSaveTime: user.lastSaveTime,
+      productionStart: user.productionStart,
+      truckLocation: user.truckLocation,
+      truckDepartureTime: user.truckDepartureTime,
+      truckInventory: user.truckInventory || {}
     });
   } catch (err) {
-    console.error("Status error:", err);
+    if (process.env.CONSOLE_MESSAGES === 'true') console.error("Status error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -77,11 +110,27 @@ router.post("/collect", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const { produced } = computeProducedSince(user.productionStart, user.birds);
-    for (const color in produced) {
-      user.eggs[color] = (user.eggs[color] || 0) + produced[color];
+    // Reset corrupted data
+    if (!user.eggs || typeof user.eggs !== 'object') {
+      user.eggs = {};
     }
-    user.productionStart = new Date();
+    if (!user.savedProduced || typeof user.savedProduced !== 'object') {
+      user.savedProduced = {};
+    }
+
+    const { produced } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
+    
+    // Ensure produced values are numbers
+    for (const color in produced) {
+      const amount = produced[color];
+      if (typeof amount === 'number' && amount > 0) {
+        user.eggs[color] = (user.eggs[color] || 0) + amount;
+      }
+    }
+
+    // Reset progress tracking
+    user.lastSaveTime = new Date();
+    user.savedProduced = {};
     await user.save();
 
     res.json({ success: true, collected: produced, eggs: user.eggs });
@@ -91,8 +140,8 @@ router.post("/collect", async (req, res) => {
   }
 });
 
-// POST /api/game/sell
-router.post("/sell", async (req, res) => {
+// POST /api/game/load_truck (formerly sell)
+router.post("/load_truck", async (req, res) => {
   try {
     const { username, color, amount } = req.body;
     const user = await getUser(username);
@@ -108,14 +157,106 @@ router.post("/sell", async (req, res) => {
       return res.status(400).json({ error: "Not enough eggs" });
     }
 
-    const coins = Math.floor(amount / BIRDS[color].eggsPerCoin);
-    user.eggs[color] -= amount;
-    user.coins += coins;
+    if (user.truckLocation !== 'farm') {
+      return res.status(400).json({ error: "Truck must be at farm to load eggs" });
+    }
+
+    // Move eggs from farm inventory to truck
+    user.eggs[color] = (user.eggs[color] || 0) - amount;
+    user.truckInventory[color] = (user.truckInventory[color] || 0) + amount;
     await user.save();
 
-    res.json({ success: true, coins: user.coins, eggs: user.eggs });
+    res.json({ success: true, eggs: user.eggs, truckInventory: user.truckInventory });
   } catch (err) {
-    console.error("Sell error:", err);
+    console.error("Load truck error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/game/truck_go_to_city
+router.post("/truck_go_to_city", async (req, res) => {
+  try {
+    const { username } = req.body;
+    const user = await getUser(username);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.truckLocation !== 'farm') {
+      return res.status(400).json({ error: "Truck must be at farm to depart" });
+    }
+
+    // Check if truck has any eggs to transport
+    const totalTruckEggs = Object.values(user.truckInventory).reduce((sum, amount) => sum + amount, 0);
+    if (totalTruckEggs === 0) {
+      return res.status(400).json({ error: "Truck must have eggs to transport to city" });
+    }
+
+    user.truckLocation = 'traveling_to_city';
+    user.truckDepartureTime = new Date();
+    // Production continues during travel
+    await user.save();
+
+    res.json({ success: true, truckLocation: user.truckLocation, truckDepartureTime: user.truckDepartureTime });
+  } catch (err) {
+    console.error("Truck go to city error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/game/truck_go_to_farm
+router.post("/truck_go_to_farm", async (req, res) => {
+  try {
+    const { username } = req.body;
+    const user = await getUser(username);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.truckLocation !== 'city') {
+      return res.status(400).json({ error: "Truck must be at city to return to farm" });
+    }
+
+    user.truckLocation = 'traveling_to_farm';
+    user.truckDepartureTime = new Date();
+    await user.save();
+
+    res.json({ success: true, truckLocation: user.truckLocation, truckDepartureTime: user.truckDepartureTime });
+  } catch (err) {
+    console.error("Truck go to farm error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/game/sell_truck_eggs
+router.post("/sell_truck_eggs", async (req, res) => {
+  try {
+    const { username } = req.body;
+    const user = await getUser(username);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.truckLocation !== 'city') {
+      return res.status(400).json({ error: "Truck must be at city to sell eggs" });
+    }
+
+    let totalCoins = 0;
+    for (const color in user.truckInventory) {
+      const amount = user.truckInventory[color] || 0;
+      if (amount > 0) {
+        const coins = Math.floor(amount / BIRDS[color].eggsPerCoin);
+        totalCoins += coins;
+        user.truckInventory[color] = 0;
+      }
+    }
+
+    user.coins += totalCoins;
+    await user.save();
+
+    res.json({ success: true, coins: user.coins, truckInventory: user.truckInventory, soldFor: totalCoins });
+  } catch (err) {
+    console.error("Sell truck eggs error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -129,6 +270,10 @@ router.post("/buy", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    if (user.truckLocation !== 'city') {
+      return res.status(400).json({ error: "Truck must be at city to buy birds" });
+    }
+
     if (!BIRDS[color]) {
       return res.status(400).json({ error: "Invalid color" });
     }
@@ -138,10 +283,32 @@ router.post("/buy", async (req, res) => {
     }
 
     user.coins -= BIRDS[color].cost;
+
+    // Save current progress before buying to minimize free eggs for new bird
+    if (user.lastSaveTime) {
+      const { produced } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
+      user.savedProduced = produced;
+      user.lastSaveTime = new Date();
+    }
+
     user.birds[color] = (user.birds[color] || 0) + 1;
+
+    // Start production when first bird is bought and truck is at farm
+    if (!user.productionStart && user.truckLocation === 'farm') {
+      user.productionStart = new Date();
+      user.lastSaveTime = new Date();
+      user.savedProduced = {};
+    }
+
     await user.save();
 
-    res.json({ success: true, coins: user.coins, birds: user.birds });
+    res.json({
+      success: true,
+      coins: user.coins,
+      birds: user.birds,
+      savedProduced: user.savedProduced,
+      lastSaveTime: user.lastSaveTime
+    });
   } catch (err) {
     console.error("Buy error:", err);
     res.status(500).json({ error: "Server error" });
@@ -167,15 +334,39 @@ router.post("/redeem", async (req, res) => {
     }
 
     if (bird === "skip_timer") {
+      // Set production as if it started 6 hours ago
       user.productionStart = new Date(Date.now() - SIX_HOURS_SEC * 1000);
+      user.lastSaveTime = new Date(Date.now() - SIX_HOURS_SEC * 1000);
+      user.savedProduced = {};
+
+      // Calculate what would have been produced in 6 hours
+      for (const color of Object.keys(BIRDS)) {
+        const count = user.birds[color] || 0;
+        if (count > 0) {
+          user.savedProduced[color] = Math.floor(count * BIRDS[color].eps * SIX_HOURS_SEC);
+        }
+      }
     } else {
+      // Save current progress before redeeming bird to minimize free eggs
+      if (user.lastSaveTime) {
+        const { produced } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
+        user.savedProduced = produced;
+        user.lastSaveTime = new Date();
+      }
+
       user.birds[bird] = (user.birds[bird] || 0) + 1;
     }
 
     user.redeemedCodes.push(code);
     await user.save();
 
-    res.json({ success: true, birds: user.birds, productionStart: user.productionStart });
+    res.json({ 
+      success: true, 
+      birds: user.birds, 
+      productionStart: user.productionStart,
+      savedProduced: user.savedProduced,
+      lastSaveTime: user.lastSaveTime
+    });
   } catch (err) {
     console.error("Redeem error:", err);
     res.status(500).json({ error: "Server error" });
@@ -190,7 +381,7 @@ router.get("/live/:username", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const { produced, seconds } = computeProducedSince(user.productionStart, user.birds);
+    const { produced, seconds } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
     res.json({ produced, seconds });
   } catch (err) {
     console.error("Live error:", err);

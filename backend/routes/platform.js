@@ -203,7 +203,7 @@ router.post("/shop/purchase", async (req, res) => {
 
     // Здесь будет логика обработки покупки
     // Пока просто логируем
-    console.log(`Purchase: ${username} bought ${quantity}x ${itemId} for ${game}`);
+    if (process.env.CONSOLE_MESSAGES === 'true') console.log(`Purchase: ${username} bought ${quantity}x ${itemId} for ${game}`);
 
     // В будущем здесь будет списание валют и выдача предметов
 

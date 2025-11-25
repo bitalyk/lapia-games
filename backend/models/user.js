@@ -65,8 +65,15 @@ const userSchema = new mongoose.Schema({
   coins: { type: Number, default: 1000 },
   birds: { type: birdSchema, default: () => ({}) },
   eggs: { type: eggSchema, default: () => ({}) },
-  productionStart: { type: Date, default: Date.now },
+  productionStart: { type: Date, default: null },
+  lastSaveTime: { type: Date, default: null },
+  savedProduced: { type: eggSchema, default: () => ({}) },
   redeemedCodes: { type: [String], default: [] },
+  
+  // Truck system
+  truckLocation: { type: String, enum: ['farm', 'traveling_to_city', 'city', 'traveling_to_farm'], default: 'farm' },
+  truckDepartureTime: { type: Date, default: null },
+  truckInventory: { type: eggSchema, default: () => ({}) },
   
   // Новые поля для платформы
   platformStats: { 

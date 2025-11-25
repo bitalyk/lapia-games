@@ -13,6 +13,54 @@ import gameRoutes from "./routes/game.js";
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
 
+// Progress saving function
+async function saveProgress() {
+  try {
+    const users = await User.find({ productionStart: { $ne: null } });
+    for (const user of users) {
+      // Skip if data is corrupted
+      if (!user.birds || typeof user.birds !== 'object') continue;
+      if (!user.savedProduced || typeof user.savedProduced !== 'object') {
+        user.savedProduced = {};
+      }
+
+      if (user.lastSaveTime) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const saveSec = Math.floor(new Date(user.lastSaveTime).getTime() / 1000);
+        const seconds = Math.min(nowSec - saveSec, 6 * 60 * 60); // Cap at 6 hours
+
+        if (seconds > 0) {
+          const newProduced = {};
+          const BIRDS = {
+            red: { eps: 1 }, orange: { eps: 2 }, yellow: { eps: 5 },
+            green: { eps: 10 }, blue: { eps: 20 }, purple: { eps: 50 }
+          };
+
+          for (const color of Object.keys(BIRDS)) {
+            const count = user.birds[color] || 0;
+            if (count > 0) {
+              newProduced[color] = Math.floor(count * BIRDS[color].eps * seconds);
+            }
+          }
+
+          // Update saved produced
+          for (const color in newProduced) {
+            user.savedProduced[color] = (user.savedProduced[color] || 0) + newProduced[color];
+          }
+
+          user.lastSaveTime = new Date();
+          await user.save();
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Progress save error:', error);
+  }
+}
+
+// Start progress saving interval
+setInterval(saveProgress, 30000); // Save every 30 seconds
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,7 +74,7 @@ const PORT = process.env.PORT || 3000;
 
 // Serve frontend static files
 const frontendRoot = path.join(__dirname, "..", "frontend");
-console.log("Serving frontend from", frontendRoot);
+if (process.env.CONSOLE_MESSAGES === 'true') console.log("Serving frontend from", frontendRoot);
 app.use(express.static(frontendRoot));
 
 // Fallback to index.html
@@ -55,11 +103,20 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Config endpoint for frontend
+app.get("/api/config", (req, res) => {
+  res.json({
+    enableRedeem: process.env.ENABLE_REDEEM === 'true',
+    showRestartButton: process.env.SHOW_RESTART_BUTTON === 'true',
+    consoleMessages: process.env.CONSOLE_MESSAGES === 'true'
+  });
+});
+
 // Запуск сервера
 app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-  console.log(`📊 Platform API available at /api/platform`);
-  console.log(`🎮 Game API available at /api/game`);
-  console.log(`🔐 Auth API available at /api/users`);
+  if (process.env.CONSOLE_MESSAGES === 'true') console.log(`✅ Server running on http://localhost:${PORT}`);
+  if (process.env.CONSOLE_MESSAGES === 'true') console.log(`📊 Platform API available at /api/platform`);
+  if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🎮 Game API available at /api/game`);
+  if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🔐 Auth API available at /api/users`);
 });
 

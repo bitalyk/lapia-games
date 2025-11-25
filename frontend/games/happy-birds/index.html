@@ -23,6 +23,10 @@
             <h3>Eggs Rate</h3>
             <div id="hb-egg-rate" class="stat-value">0/sec</div>
         </div>
+        <div class="stat-card">
+            <h3>Collection Timer</h3>
+            <div id="hb-collection-timer" class="stat-value">Ready</div>
+        </div>
     </div>
 
     <!-- Управление -->
@@ -30,6 +34,9 @@
         <button id="hb-collect-btn" class="control-btn collect">Collect Eggs</button>
         <button id="hb-sell-btn" class="control-btn sell">Sell All Eggs</button>
     </div>
+
+    <!-- Таймер -->
+    <div id="hb-timer-text" class="timer-text">Collection ready in: Ready</div>
 
     <!-- Птицы -->
     <div class="birds-section">
@@ -42,6 +49,7 @@
     <!-- Яйца -->
     <div class="eggs-section">
         <h3>Egg Inventory</h3>
+        <div id="hb-total-eggs" class="total-eggs">Total: 0</div>
         <div id="hb-eggs-grid" class="eggs-grid">
             <!-- Динамически генерируется -->
         </div>
