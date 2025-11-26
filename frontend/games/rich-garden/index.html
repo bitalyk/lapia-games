@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rich Garden - Lapia Games</title>
+    <link rel="stylesheet" href="../../style.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="game-area">
+            <!-- Game content will be loaded here by JavaScript -->
+        </div>
+    </div>
+
+    <script type="module">
+        import RichGardenGame from './game.js';
+
+        // Initialize game when DOM is loaded
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Initialize auth manager if available
+                if (window.authManager) {
+                    await window.authManager.init();
+                }
+
+                // Create and start Rich Garden game
+                const game = new RichGardenGame();
+
+                // Set game manager if available
+                if (window.gameManager) {
+                    game.setGameManager(window.gameManager);
+                }
+
+                // Start the game
+                await game.start();
+
+            } catch (error) {
+                console.error('Failed to initialize Rich Garden:', error);
+                document.getElementById('game-area').innerHTML = `
+                    <div class="error-message">
+                        <h2>Failed to load Rich Garden</h2>
+                        <p>Please check the console for details.</p>
+                        <button onclick="location.reload()">Reload Page</button>
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

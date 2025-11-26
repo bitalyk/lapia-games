@@ -368,7 +368,7 @@ export class AuthManager {
     async launchGame(gameId) {
         console.log(`🎮 Launching game: ${gameId}`);
         
-        if (gameId === 'happy-birds') {
+        if (gameId === 'happy-birds' || gameId === 'rich-garden') {
             try {
                 if (window.gameManager) {
                     await window.gameManager.launchGame(gameId);
@@ -484,11 +484,23 @@ export class AuthManager {
         // Игровые карточки
         const gameCards = document.querySelectorAll('.game-card:not(.disabled)');
         gameCards.forEach(card => {
+            // Handle clicks on the entire card
             card.addEventListener('click', (e) => {
                 e.preventDefault();
                 const gameTitle = card.querySelector('h3').textContent;
                 this.launchGameFromMenu(gameTitle);
             });
+
+            // Also handle clicks on the play button specifically
+            const playBtn = card.querySelector('.play-btn');
+            if (playBtn) {
+                playBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const gameTitle = card.querySelector('h3').textContent;
+                    this.launchGameFromMenu(gameTitle);
+                });
+            }
         });
 
         // Кнопки достижений и настроек
@@ -535,6 +547,7 @@ removeMenuEventListeners() {
     launchGameFromMenu(gameTitle) {
         const gameMap = {
             'Happy Birds': 'happy-birds',
+            'Rich Garden': 'rich-garden',
             'Target Master': 'target-master', 
             'Puzzle Quest': 'puzzle-quest',
             'Speed Runner': 'speed-runner'

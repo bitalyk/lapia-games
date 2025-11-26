@@ -3,3 +3,5 @@ node_modules/
 .env
 # Archive folder
 archive/
+# Redeem codes reference (contains cheat codes)
+REDEEM_CODES.md

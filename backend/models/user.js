@@ -19,6 +19,39 @@ const eggSchema = new mongoose.Schema({
   purple: { type: Number, default: 0 },
 }, { _id: false });
 
+// Rich Garden Schemas
+const treeSchema = new mongoose.Schema({
+  type: { type: String, required: true, enum: ['common', 'bronze', 'silver', 'golden', 'platinum', 'diamond'] },
+  state: { type: String, required: true, enum: ['producing', 'ready', 'collecting'], default: 'producing' },
+  timeLeft: { type: Number, required: true, default: 14400 }, // 4 hours in seconds
+  plantedAt: { type: Date, default: Date.now },
+  lastCollected: { type: Date, default: null }
+}, { _id: false });
+
+const richGardenInventorySchema = new mongoose.Schema({
+  common: { type: Number, default: 0 },
+  bronze: { type: Number, default: 0 },
+  silver: { type: Number, default: 0 },
+  golden: { type: Number, default: 0 },
+  platinum: { type: Number, default: 0 },
+  diamond: { type: Number, default: 0 }
+}, { _id: false });
+
+const richGardenProgressSchema = new mongoose.Schema({
+  coins: { type: Number, default: 1000 },
+  garden: { type: [treeSchema], default: () => Array(10).fill(null) },
+  inventory: { type: richGardenInventorySchema, default: () => ({}) },
+  truckLocation: { type: String, enum: ['farm', 'traveling_to_city', 'city', 'traveling_to_farm'], default: 'farm' },
+  truckDepartureTime: { type: Date, default: null },
+  totalTreesPlanted: { type: Number, default: 0 },
+  totalFruitsCollected: { type: Number, default: 0 },
+  totalCoinsEarned: { type: Number, default: 0 },
+  highestGardenLevel: { type: Number, default: 1 },
+  redeemedCodes: { type: [String], default: [] },
+  lastPlayed: { type: Date, default: Date.now },
+  playTime: { type: Number, default: 0 }
+}, { _id: false });
+
 const platformStatsSchema = new mongoose.Schema({
   totalPlayTime: { type: Number, default: 0 },
   gamesPlayed: { type: Number, default: 1 },
@@ -38,6 +71,7 @@ const gameProgressSchema = new mongoose.Schema({
 const platformCurrencySchema = new mongoose.Schema({
   platform: { type: Number, default: 100 },
   'happy-birds': { type: Number, default: 0 },
+  'rich-garden': { type: Number, default: 0 },
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
@@ -90,8 +124,28 @@ const userSchema = new mongoose.Schema({
     type: Map,
     of: gameProgressSchema,
     default: () => new Map([
-      ['happy-birds', { unlocked: true, lastPlayed: new Date() }]
+      ['happy-birds', { unlocked: true, lastPlayed: new Date() }],
+      ['rich-garden', { unlocked: true, lastPlayed: new Date() }]
     ])
+  },
+  
+  // Rich Garden specific data
+  richGardenProgress: {
+    type: richGardenProgressSchema,
+    default: () => ({
+      coins: 1000,
+      garden: Array(10).fill(null),
+      inventory: {},
+      truckLocation: 'farm',
+      truckDepartureTime: null,
+      totalTreesPlanted: 0,
+      totalFruitsCollected: 0,
+      totalCoinsEarned: 0,
+      highestGardenLevel: 1,
+      redeemedCodes: [],
+      lastPlayed: new Date(),
+      playTime: 0
+    })
   },
   
   inventory: {

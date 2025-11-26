@@ -134,14 +134,15 @@ export default class HappyBirdsGame {
 
     // Update produced calculation
     updateProduced() {
-        if (!this.lastSaveTime) {
+        if (!this.productionStart) {
             this.produced = {};
             return;
         }
 
+        const referenceTime = this.lastSaveTime || this.productionStart;
         const nowSec = Math.floor(Date.now() / 1000);
-        const saveSec = Math.floor(this.lastSaveTime.getTime() / 1000);
-        let seconds = nowSec - saveSec;
+        const refSec = Math.floor(referenceTime.getTime() / 1000);
+        let seconds = nowSec - refSec;
         if (seconds <= 0) {
             this.produced = { ...this.savedProduced };
             return;
@@ -274,7 +275,9 @@ export default class HappyBirdsGame {
 
     // Buy bird
     async buyBird(color) {
-        if (this.truckLocation !== 'city') {
+        // Allow buying first bird at farm, otherwise require truck at city
+        const totalBirds = Object.values(this.birds).reduce((sum, count) => sum + count, 0);
+        if (totalBirds > 0 && this.truckLocation !== 'city') {
             this.showGameMessage('Truck must be at city to buy birds!', 'error');
             return;
         }
@@ -309,6 +312,9 @@ export default class HappyBirdsGame {
             if (data.success) {
                 this.coins = data.coins;
                 this.birds = data.birds;
+                if (data.productionStart) this.productionStart = new Date(data.productionStart);
+                this.lastSaveTime = data.lastSaveTime ? new Date(data.lastSaveTime) : null;
+                if (data.savedProduced) this.savedProduced = data.savedProduced;
                 this.updateUI();
                 this.showGameMessage(`${this.BIRDS[color].label} bird purchased!`, 'success');
                 // Refresh status to ensure sync
@@ -426,12 +432,6 @@ export default class HappyBirdsGame {
     async truckGoToCity() {
         if (this.truckLocation !== 'farm') {
             this.showGameMessage('Truck is not at farm!', 'error');
-            return;
-        }
-
-        const totalTruckEggs = Object.values(this.truckInventory).reduce((sum, amount) => sum + amount, 0);
-        if (totalTruckEggs === 0) {
-            this.showGameMessage('Truck must have eggs to transport!', 'error');
             return;
         }
 
@@ -772,28 +772,36 @@ export default class HappyBirdsGame {
         }
 
         const timerEl = document.getElementById('hb-collection-timer');
-        if (timerEl && this.productionStart) {
-            const lastSaveTime = this.lastSaveTime || this.productionStart;
-            const timeSinceLast = (Date.now() - lastSaveTime.getTime()) / 1000;
-            if (timeSinceLast >= this.SIX_HOURS_SEC) {
-                timerEl.textContent = 'Ready';
+        if (timerEl) {
+            if (!this.productionStart) {
+                timerEl.textContent = 'Not started';
             } else {
-                const hoursLeft = Math.floor((this.SIX_HOURS_SEC - timeSinceLast) / 3600);
-                const minsLeft = Math.floor(((this.SIX_HOURS_SEC - timeSinceLast) % 3600) / 60);
-                timerEl.textContent = `${hoursLeft}h ${minsLeft}m`;
+                const lastSaveTime = this.lastSaveTime || this.productionStart;
+                const timeSinceLast = (Date.now() - lastSaveTime.getTime()) / 1000;
+                if (timeSinceLast >= this.SIX_HOURS_SEC) {
+                    timerEl.textContent = 'Ready';
+                } else {
+                    const hoursLeft = Math.floor((this.SIX_HOURS_SEC - timeSinceLast) / 3600);
+                    const minsLeft = Math.floor(((this.SIX_HOURS_SEC - timeSinceLast) % 3600) / 60);
+                    timerEl.textContent = `${hoursLeft}h ${minsLeft}m`;
+                }
             }
         }
 
         const timerTextEl = document.getElementById('hb-timer-text');
-        if (timerTextEl && this.productionStart) {
-            const lastSaveTime = this.lastSaveTime || this.productionStart;
-            const timeSinceLast = (Date.now() - lastSaveTime.getTime()) / 1000;
-            if (timeSinceLast >= this.SIX_HOURS_SEC) {
-                timerTextEl.textContent = 'Collection ready in: Ready';
+        if (timerTextEl) {
+            if (!this.productionStart) {
+                timerTextEl.textContent = 'Collection ready in: Not started';
             } else {
-                const hoursLeft = Math.floor((this.SIX_HOURS_SEC - timeSinceLast) / 3600);
-                const minsLeft = Math.floor(((this.SIX_HOURS_SEC - timeSinceLast) % 3600) / 60);
-                timerTextEl.textContent = `Collection ready in: ${hoursLeft}h ${minsLeft}m`;
+                const lastSaveTime = this.lastSaveTime || this.productionStart;
+                const timeSinceLast = (Date.now() - lastSaveTime.getTime()) / 1000;
+                if (timeSinceLast >= this.SIX_HOURS_SEC) {
+                    timerTextEl.textContent = 'Collection ready in: Ready';
+                } else {
+                    const hoursLeft = Math.floor((this.SIX_HOURS_SEC - timeSinceLast) / 3600);
+                    const minsLeft = Math.floor(((this.SIX_HOURS_SEC - timeSinceLast) % 3600) / 60);
+                    timerTextEl.textContent = `Collection ready in: ${hoursLeft}h ${minsLeft}m`;
+                }
             }
         }
 

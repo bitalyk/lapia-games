@@ -6,6 +6,11 @@ class GameManager {
                 name: 'Happy Birds',
                 path: '../games/happy-birds/game.js',
                 currency: 'eggs'
+            },
+            'rich-garden': {
+                name: 'Rich Garden',
+                path: '../games/rich-garden/game.js',
+                currency: 'fruits'
             }
         };
         
@@ -29,6 +34,14 @@ class GameManager {
             if (gameId === 'happy-birds') {
                 const { default: HappyBirdsGame } = await import('../games/happy-birds/game.js');
                 this.currentGame = new HappyBirdsGame();
+                
+                // ✅ Передаем gameManager в игру
+                this.currentGame.setGameManager(this);
+                
+                await this.currentGame.start();
+            } else if (gameId === 'rich-garden') {
+                const { default: RichGardenGame } = await import('../games/rich-garden/game.js');
+                this.currentGame = new RichGardenGame();
                 
                 // ✅ Передаем gameManager в игру
                 this.currentGame.setGameManager(this);

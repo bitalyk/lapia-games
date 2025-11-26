@@ -9,9 +9,10 @@ import dotenv from 'dotenv';
 // Импорты моделей и роутов
 import User from "./models/user.js";
 import platformRoutes from "./routes/platform.js";
-import gameRoutes from "./routes/game.js";
+import happyBirdsRoutes from "./routes/happy-birds.js";
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
+import richGardenRoutes from "./routes/rich-garden.js";
 
 // Progress saving function
 async function saveProgress() {
@@ -52,6 +53,54 @@ async function saveProgress() {
           await user.save();
         }
       }
+
+      // Save Rich Garden progress
+      if (user.richGardenProgress && user.richGardenProgress.garden) {
+        const rgData = user.richGardenProgress;
+        let updated = false;
+
+        // Update tree timers (1 second per save interval)
+        rgData.garden.forEach((tree, index) => {
+          if (tree) {
+            if (tree.state === 'producing') {
+              tree.timeLeft = Math.max(0, tree.timeLeft - 1);
+              if (tree.timeLeft <= 0) {
+                tree.state = 'ready';
+                tree.timeLeft = 30 * 60; // 30 minutes in seconds
+                updated = true;
+              }
+            } else if (tree.state === 'collecting') {
+              tree.timeLeft = Math.max(0, tree.timeLeft - 1);
+              if (tree.timeLeft <= 0) {
+                tree.state = 'producing';
+                tree.timeLeft = 4 * 60 * 60; // 4 hours in seconds
+                updated = true;
+              }
+            }
+          }
+        });
+
+        // Update truck location
+        if (rgData.truckDepartureTime) {
+          const departureTime = new Date(rgData.truckDepartureTime);
+          const now = new Date();
+          const elapsed = Math.floor((now - departureTime) / 1000);
+
+          if (rgData.truckLocation === 'traveling_to_city' && elapsed >= 60 * 60) { // 1 hour
+            rgData.truckLocation = 'city';
+            rgData.truckDepartureTime = null;
+            updated = true;
+          } else if (rgData.truckLocation === 'traveling_to_farm' && elapsed >= 60 * 60) { // 1 hour
+            rgData.truckLocation = 'farm';
+            rgData.truckDepartureTime = null;
+            updated = true;
+          }
+        }
+
+        if (updated) {
+          await user.save();
+        }
+      }
     }
   } catch (error) {
     console.error('Progress save error:', error);
@@ -86,13 +135,16 @@ app.get("/", (req, res) => {
 app.use("/api/platform", platformRoutes);
 
 // Подключаем роуты игры
-app.use("/api/game", gameRoutes);
+app.use("/api/game", happyBirdsRoutes);
 
 // Подключаем роуты аутентификации
 app.use("/api/users", authRoutes);
 
 // Подключаем роуты пользователей
 app.use("/api/users", usersRoutes);
+
+// Подключаем роуты Rich Garden
+app.use("/api/rich-garden", richGardenRoutes);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -117,6 +169,7 @@ app.listen(PORT, () => {
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`✅ Server running on http://localhost:${PORT}`);
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`📊 Platform API available at /api/platform`);
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🎮 Game API available at /api/game`);
+  if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🌳 Rich Garden API available at /api/rich-garden`);
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🔐 Auth API available at /api/users`);
 });
 

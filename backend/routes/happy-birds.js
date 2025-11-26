@@ -186,12 +186,7 @@ router.post("/truck_go_to_city", async (req, res) => {
       return res.status(400).json({ error: "Truck must be at farm to depart" });
     }
 
-    // Check if truck has any eggs to transport
-    const totalTruckEggs = Object.values(user.truckInventory).reduce((sum, amount) => sum + amount, 0);
-    if (totalTruckEggs === 0) {
-      return res.status(400).json({ error: "Truck must have eggs to transport to city" });
-    }
-
+    // Allow sending truck even if empty
     user.truckLocation = 'traveling_to_city';
     user.truckDepartureTime = new Date();
     // Production continues during travel
@@ -270,7 +265,9 @@ router.post("/buy", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    if (user.truckLocation !== 'city') {
+    // Allow buying first bird at farm, otherwise require truck at city
+    const totalBirds = Object.values(user.birds).reduce((sum, count) => sum + count, 0);
+    if (totalBirds > 0 && user.truckLocation !== 'city') {
       return res.status(400).json({ error: "Truck must be at city to buy birds" });
     }
 
@@ -293,10 +290,10 @@ router.post("/buy", async (req, res) => {
 
     user.birds[color] = (user.birds[color] || 0) + 1;
 
-    // Start production when first bird is bought and truck is at farm
-    if (!user.productionStart && user.truckLocation === 'farm') {
+    // Start production when first bird is bought
+    if (!user.productionStart) {
       user.productionStart = new Date();
-      user.lastSaveTime = new Date();
+      // Don't set lastSaveTime for first bird - let timer start from productionStart
       user.savedProduced = {};
     }
 
@@ -307,7 +304,8 @@ router.post("/buy", async (req, res) => {
       coins: user.coins,
       birds: user.birds,
       savedProduced: user.savedProduced,
-      lastSaveTime: user.lastSaveTime
+      lastSaveTime: user.lastSaveTime,
+      productionStart: user.productionStart
     });
   } catch (err) {
     console.error("Buy error:", err);
