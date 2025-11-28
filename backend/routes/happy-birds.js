@@ -23,25 +23,24 @@ const CODES = {
   SKIPTIMER: "skip_timer"
 };
 
-const SIX_HOURS_SEC = 6 * 60 * 60;
+const SIX_HOURS_SEC = process.env.FAST_MODE === 'true' ? 30 : 6 * 60 * 60; // 30s testing / 6h normal
+const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 * 1000 : 60 * 60 * 1000; // 10s testing / 1h normal
 
 // Helper functions
-function computeProducedSince(lastSaveTime, savedProduced, birds) {
-  if (!lastSaveTime) return { produced: {}, seconds: 0 };
+function computeProducedSince(productionStart, birds) {
+  if (!productionStart) return {};
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const saveSec = Math.floor(new Date(lastSaveTime).getTime() / 1000);
-  let seconds = nowSec - saveSec;
-  if (seconds <= 0) return { produced: savedProduced || {}, seconds: 0 };
+  const startSec = Math.floor(new Date(productionStart).getTime() / 1000);
+  let seconds = nowSec - startSec;
   if (seconds > SIX_HOURS_SEC) seconds = SIX_HOURS_SEC;
 
-  const produced = { ...(savedProduced || {}) };
+  const produced = {};
   for (const color of Object.keys(BIRDS)) {
     const count = (birds && birds[color]) ? birds[color] : 0;
-    if (count <= 0) { produced[color] = produced[color] || 0; continue; }
-    produced[color] = (produced[color] || 0) + Math.floor(count * BIRDS[color].eps * seconds);
+    produced[color] = Math.floor(count * BIRDS[color].eps * seconds);
   }
-  return { produced, seconds };
+  return produced;
 }
 
 async function getUser(username) {
@@ -69,14 +68,14 @@ router.get("/status/:username", async (req, res) => {
     // Handle truck travel completion
     if (user.truckLocation === 'traveling_to_city' && user.truckDepartureTime) {
       const travelTime = Date.now() - user.truckDepartureTime.getTime();
-      if (travelTime >= 60 * 60 * 1000) { // 1 hour
+      if (travelTime >= TRUCK_TRAVEL_TIME) { // 1 hour (or 10s in fast mode)
         user.truckLocation = 'city';
         user.truckDepartureTime = null;
         await user.save();
       }
     } else if (user.truckLocation === 'traveling_to_farm' && user.truckDepartureTime) {
       const travelTime = Date.now() - user.truckDepartureTime.getTime();
-      if (travelTime >= 60 * 60 * 1000) { // 1 hour
+      if (travelTime >= TRUCK_TRAVEL_TIME) { // 1 hour (or 10s in fast mode)
         user.truckLocation = 'farm';
         user.truckDepartureTime = null;
         await user.save();
@@ -110,30 +109,41 @@ router.post("/collect", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Reset corrupted data
-    if (!user.eggs || typeof user.eggs !== 'object') {
-      user.eggs = {};
-    }
-    if (!user.savedProduced || typeof user.savedProduced !== 'object') {
-      user.savedProduced = {};
+    // Ensure production has started
+    if (!user.productionStart) {
+      return res.status(400).json({ error: "Buy a bird to start production." });
     }
 
-    const { produced } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
-    
-    // Ensure produced values are numbers
-    for (const color in produced) {
-      const amount = produced[color];
-      if (typeof amount === 'number' && amount > 0) {
-        user.eggs[color] = (user.eggs[color] || 0) + amount;
+    const lastCollectTime = user.lastSaveTime || user.productionStart;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const lastCollectSec = Math.floor(new Date(lastCollectTime).getTime() / 1000);
+    let seconds = nowSec - lastCollectSec;
+
+    if (seconds <= 0) {
+      return res.json({ success: true, collected: {}, eggs: user.eggs });
+    }
+    if (seconds > SIX_HOURS_SEC) {
+      seconds = SIX_HOURS_SEC;
+    }
+
+    const collected = {};
+    for (const color of Object.keys(BIRDS)) {
+      const count = (user.birds && user.birds[color]) ? user.birds[color] : 0;
+      if (count > 0) {
+        const amount = Math.floor(count * BIRDS[color].eps * seconds);
+        if (amount > 0) {
+          collected[color] = amount;
+          user.eggs[color] = (user.eggs[color] || 0) + amount;
+        }
       }
     }
 
-    // Reset progress tracking
+    // Reset collection timer
     user.lastSaveTime = new Date();
-    user.savedProduced = {};
+    user.markModified('eggs');
     await user.save();
 
-    res.json({ success: true, collected: produced, eggs: user.eggs });
+    res.json({ success: true, collected, eggs: user.eggs });
   } catch (err) {
     console.error("Collect error:", err);
     res.status(500).json({ error: "Server error" });
@@ -237,13 +247,20 @@ router.post("/sell_truck_eggs", async (req, res) => {
     }
 
     let totalCoins = 0;
-    for (const color in user.truckInventory) {
-      const amount = user.truckInventory[color] || 0;
-      if (amount > 0) {
-        const coins = Math.floor(amount / BIRDS[color].eggsPerCoin);
-        totalCoins += coins;
-        user.truckInventory[color] = 0;
+    const inventorySource = (user.truckInventory && typeof user.truckInventory.toObject === 'function')
+      ? user.truckInventory.toObject()
+      : (user.truckInventory || {});
+    const entries = Object.entries(inventorySource);
+    for (const [color, amountRaw] of entries) {
+      const config = BIRDS[color];
+      const amount = Number(amountRaw) || 0;
+      if (!config || amount <= 0) {
+        continue;
       }
+
+      const coins = Math.floor(amount / config.eggsPerCoin);
+      totalCoins += coins;
+      user.truckInventory[color] = 0;
     }
 
     user.coins += totalCoins;

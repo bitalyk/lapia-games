@@ -13,10 +13,56 @@ import happyBirdsRoutes from "./routes/happy-birds.js";
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
 import richGardenRoutes from "./routes/rich-garden.js";
+import goldenMineRoutes from "./routes/golden-mine.js";
+
+// Mine configuration for progress saving
+const MINE_TYPES = {
+  coal: { orePerSecond: 1 },
+  copper: { orePerSecond: 2 },
+  iron: { orePerSecond: 5 },
+  nickel: { orePerSecond: 10 },
+  silver: { orePerSecond: 20 },
+  golden: { orePerSecond: 50 }
+};
+
+function getOrePerSecond(mineType) {
+  return MINE_TYPES[mineType]?.orePerSecond || 0;
+}
 
 // Progress saving function
 async function saveProgress() {
   try {
+    const SIX_HOURS_SEC = process.env.FAST_MODE === 'true' ? 30 : 6 * 60 * 60; // Use same logic as routes
+    const PRODUCTION_TIME = process.env.FAST_MODE === 'true' ? 30 : 4 * 60 * 60; // Rich Garden
+    const COLLECTION_TIME = process.env.FAST_MODE === 'true' ? 15 : 30 * 60; // Rich Garden
+    const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 : 60 * 60; // 1 hour
+    const GM_PRODUCTION_TIME = process.env.FAST_MODE === 'true' ? 30 : 8 * 60 * 60; // Golden Mine
+    const GM_REST_TIME = process.env.FAST_MODE === 'true' ? 15 : 4 * 60 * 60; // Golden Mine
+    const GM_TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 : 2 * 60 * 60; // Golden Mine
+
+    // Helper function for Happy Birds
+    function computeProducedSince(productionStart, birds) {
+      if (!productionStart) return {};
+      const nowSec = Math.floor(Date.now() / 1000);
+      const startSec = Math.floor(new Date(productionStart).getTime() / 1000);
+      let seconds = nowSec - startSec;
+      if (seconds > SIX_HOURS_SEC) seconds = SIX_HOURS_SEC;
+      const produced = {};
+      const BIRDS = {
+        red: { eps: 1 }, orange: { eps: 2 }, yellow: { eps: 5 },
+        green: { eps: 10 }, blue: { eps: 20 }, purple: { eps: 50 }
+      };
+      for (const color of Object.keys(BIRDS)) {
+        const count = (birds && birds[color]) ? birds[color] : 0;
+        produced[color] = Math.floor(count * BIRDS[color].eps * seconds);
+      }
+      // Cap produced
+      for (const color in produced) {
+        produced[color] = Math.min(produced[color], BIRDS[color].eps * SIX_HOURS_SEC);
+      }
+      return produced;
+    }
+
     const users = await User.find({ productionStart: { $ne: null } });
     for (const user of users) {
       // Skip if data is corrupted
@@ -25,74 +71,60 @@ async function saveProgress() {
         user.savedProduced = {};
       }
 
-      if (user.lastSaveTime) {
-        const nowSec = Math.floor(Date.now() / 1000);
-        const saveSec = Math.floor(new Date(user.lastSaveTime).getTime() / 1000);
-        const seconds = Math.min(nowSec - saveSec, 6 * 60 * 60); // Cap at 6 hours
+      // Happy Birds: Production is now only calculated on collect.
+      // The background save no longer needs to update savedProduced.
 
-        if (seconds > 0) {
-          const newProduced = {};
-          const BIRDS = {
-            red: { eps: 1 }, orange: { eps: 2 }, yellow: { eps: 5 },
-            green: { eps: 10 }, blue: { eps: 20 }, purple: { eps: 50 }
-          };
+      // Save Rich Garden progress is now handled by explicit user actions (collect).
+      // The background save no longer needs to update Rich Garden state.
 
-          for (const color of Object.keys(BIRDS)) {
-            const count = user.birds[color] || 0;
-            if (count > 0) {
-              newProduced[color] = Math.floor(count * BIRDS[color].eps * seconds);
-            }
-          }
-
-          // Update saved produced
-          for (const color in newProduced) {
-            user.savedProduced[color] = (user.savedProduced[color] || 0) + newProduced[color];
-          }
-
-          user.lastSaveTime = new Date();
-          await user.save();
-        }
-      }
-
-      // Save Rich Garden progress
-      if (user.richGardenProgress && user.richGardenProgress.garden) {
-        const rgData = user.richGardenProgress;
+      // Save Golden Mine progress
+      if (user.goldenMineProgress && user.goldenMineProgress.mines) {
+        const gmData = user.goldenMineProgress;
         let updated = false;
 
-        // Update tree timers (1 second per save interval)
-        rgData.garden.forEach((tree, index) => {
-          if (tree) {
-            if (tree.state === 'producing') {
-              tree.timeLeft = Math.max(0, tree.timeLeft - 1);
-              if (tree.timeLeft <= 0) {
-                tree.state = 'ready';
-                tree.timeLeft = 30 * 60; // 30 minutes in seconds
-                updated = true;
-              }
-            } else if (tree.state === 'collecting') {
-              tree.timeLeft = Math.max(0, tree.timeLeft - 1);
-              if (tree.timeLeft <= 0) {
-                tree.state = 'producing';
-                tree.timeLeft = 4 * 60 * 60; // 4 hours in seconds
-                updated = true;
-              }
+        // Update mine timers (1 second per save interval)
+        gmData.mines.forEach((mine, index) => {
+          if (mine) {
+            const timePassed = 1; // 1 second per save
+
+            if (mine.state === 'producing' && timePassed >= mine.timeLeft) {
+              // Production finished, move to ready
+              mine.state = 'ready';
+              mine.oreProduced = mine.workers * getOrePerSecond(mine.type) * GM_PRODUCTION_TIME; // 8 hours (or 30s fast mode)
+              mine.timeLeft = 0;
+              mine.lastStateChange = new Date();
+              updated = true;
+            } else if (mine.state === 'producing') {
+              mine.timeLeft -= timePassed;
+              mine.lastStateChange = new Date();
+              updated = true;
+            } else if (mine.state === 'resting' && timePassed >= mine.timeLeft) {
+              // Rest finished, back to producing
+              mine.state = 'producing';
+              mine.timeLeft = GM_PRODUCTION_TIME; // 8 hours (or 30s fast mode)
+              mine.lastStateChange = new Date();
+              updated = true;
+            } else if (mine.state === 'resting') {
+              mine.timeLeft -= timePassed;
+              mine.lastStateChange = new Date();
+              updated = true;
             }
           }
         });
 
         // Update truck location
-        if (rgData.truckDepartureTime) {
-          const departureTime = new Date(rgData.truckDepartureTime);
+        if (gmData.truckDepartureTime) {
+          const departureTime = new Date(gmData.truckDepartureTime);
           const now = new Date();
           const elapsed = Math.floor((now - departureTime) / 1000);
 
-          if (rgData.truckLocation === 'traveling_to_city' && elapsed >= 60 * 60) { // 1 hour
-            rgData.truckLocation = 'city';
-            rgData.truckDepartureTime = null;
+          if (gmData.truckLocation === 'traveling_to_factory' && elapsed >= GM_TRUCK_TRAVEL_TIME) { // 2 hours (or 10s fast mode)
+            gmData.truckLocation = 'factory';
+            gmData.truckDepartureTime = null;
             updated = true;
-          } else if (rgData.truckLocation === 'traveling_to_farm' && elapsed >= 60 * 60) { // 1 hour
-            rgData.truckLocation = 'farm';
-            rgData.truckDepartureTime = null;
+          } else if (gmData.truckLocation === 'traveling_to_mine' && elapsed >= GM_TRUCK_TRAVEL_TIME) { // 2 hours (or 10s fast mode)
+            gmData.truckLocation = 'mine';
+            gmData.truckDepartureTime = null;
             updated = true;
           }
         }
@@ -146,6 +178,10 @@ app.use("/api/users", usersRoutes);
 // Подключаем роуты Rich Garden
 app.use("/api/rich-garden", richGardenRoutes);
 
+// Подключаем роуты Golden Mine
+app.use("/api/golden-mine", goldenMineRoutes);
+console.log('⛏️ Golden Mine API available at /api/golden-mine');
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ 
@@ -160,7 +196,8 @@ app.get("/api/config", (req, res) => {
   res.json({
     enableRedeem: process.env.ENABLE_REDEEM === 'true',
     showRestartButton: process.env.SHOW_RESTART_BUTTON === 'true',
-    consoleMessages: process.env.CONSOLE_MESSAGES === 'true'
+    consoleMessages: process.env.CONSOLE_MESSAGES === 'true',
+    fastMode: process.env.FAST_MODE === 'true'
   });
 });
 

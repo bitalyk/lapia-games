@@ -368,7 +368,7 @@ export class AuthManager {
     async launchGame(gameId) {
         console.log(`🎮 Launching game: ${gameId}`);
         
-        if (gameId === 'happy-birds' || gameId === 'rich-garden') {
+        if (gameId === 'happy-birds' || gameId === 'rich-garden' || gameId === 'golden-mine') {
             try {
                 if (window.gameManager) {
                     await window.gameManager.launchGame(gameId);
@@ -548,6 +548,7 @@ removeMenuEventListeners() {
         const gameMap = {
             'Happy Birds': 'happy-birds',
             'Rich Garden': 'rich-garden',
+            'Golden Mine': 'golden-mine',
             'Target Master': 'target-master', 
             'Puzzle Quest': 'puzzle-quest',
             'Speed Runner': 'speed-runner'
@@ -568,6 +569,8 @@ removeMenuEventListeners() {
             const totalGames = document.getElementById('total-games');
             const playTime = document.getElementById('play-time');
             const hbLastPlayed = document.getElementById('hb-last-played');
+            const rgLastPlayed = document.getElementById('rg-last-played');
+            const gmLastPlayed = document.getElementById('gm-last-played');
             
             // Обновляем имя пользователя
             if (usernameDisplay && this.currentUser) {
@@ -596,6 +599,18 @@ removeMenuEventListeners() {
                 hbLastPlayed.textContent = lastPlayed;
             }
             
+            // Обновляем последнюю игру Rich Garden
+            if (rgLastPlayed) {
+                const lastPlayed = this.getRichGardenLastPlayed();
+                rgLastPlayed.textContent = lastPlayed;
+            }
+            
+            // Обновляем последнюю игру Golden Mine
+            if (gmLastPlayed) {
+                const lastPlayed = this.getGoldenMineLastPlayed();
+                gmLastPlayed.textContent = lastPlayed;
+            }
+            
             console.log('📊 Menu user info updated');
         } catch (error) {
             console.error('Error updating menu user info:', error);
@@ -622,6 +637,36 @@ removeMenuEventListeners() {
             return 'Never';
         } catch (error) {
             console.error('Error getting last played time:', error);
+            return 'Unknown';
+        }
+    }
+
+    // ✅ ДОБАВЛЯЕМ: Получение времени последней игры Rich Garden
+    getRichGardenLastPlayed() {
+        try {
+            if (this.currentUser?.gamesProgress?.['rich-garden']?.lastPlayed) {
+                const lastPlayed = new Date(this.currentUser.gamesProgress['rich-garden'].lastPlayed);
+                return lastPlayed.toLocaleDateString();
+            }
+            
+            return 'Never';
+        } catch (error) {
+            console.error('Error getting Rich Garden last played time:', error);
+            return 'Unknown';
+        }
+    }
+
+    // ✅ ДОБАВЛЯЕМ: Получение времени последней игры Golden Mine
+    getGoldenMineLastPlayed() {
+        try {
+            if (this.currentUser?.gamesProgress?.['golden-mine']?.lastPlayed) {
+                const lastPlayed = new Date(this.currentUser.gamesProgress['golden-mine'].lastPlayed);
+                return lastPlayed.toLocaleDateString();
+            }
+            
+            return 'Never';
+        } catch (error) {
+            console.error('Error getting Golden Mine last played time:', error);
             return 'Unknown';
         }
     }

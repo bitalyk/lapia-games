@@ -25,6 +25,7 @@ const treeSchema = new mongoose.Schema({
   state: { type: String, required: true, enum: ['producing', 'ready', 'collecting'], default: 'producing' },
   timeLeft: { type: Number, required: true, default: 14400 }, // 4 hours in seconds
   plantedAt: { type: Date, default: Date.now },
+  collectionStartTime: { type: Date, default: null }, // When collection started
   lastCollected: { type: Date, default: null }
 }, { _id: false });
 
@@ -41,12 +42,47 @@ const richGardenProgressSchema = new mongoose.Schema({
   coins: { type: Number, default: 1000 },
   garden: { type: [treeSchema], default: () => Array(10).fill(null) },
   inventory: { type: richGardenInventorySchema, default: () => ({}) },
+  truckInventory: { type: richGardenInventorySchema, default: () => ({}) },
   truckLocation: { type: String, enum: ['farm', 'traveling_to_city', 'city', 'traveling_to_farm'], default: 'farm' },
   truckDepartureTime: { type: Date, default: null },
   totalTreesPlanted: { type: Number, default: 0 },
   totalFruitsCollected: { type: Number, default: 0 },
   totalCoinsEarned: { type: Number, default: 0 },
   highestGardenLevel: { type: Number, default: 1 },
+  redeemedCodes: { type: [String], default: [] },
+  lastPlayed: { type: Date, default: Date.now },
+  playTime: { type: Number, default: 0 }
+}, { _id: false });
+
+// Golden Mine Schemas
+const mineSchema = new mongoose.Schema({
+  type: { type: String, required: true, enum: ['coal', 'copper', 'iron', 'nickel', 'silver', 'golden'] },
+  workers: { type: Number, required: true, default: 1, min: 1, max: 10 },
+  state: { type: String, required: true, enum: ['producing', 'ready', 'resting'], default: 'producing' },
+  timeLeft: { type: Number, required: true, default: 28800 }, // 8 hours in seconds
+  lastStateChange: { type: Date, default: Date.now },
+  oreProduced: { type: Number, default: 0 }
+}, { _id: false });
+
+const goldenMineInventorySchema = new mongoose.Schema({
+  coal: { type: Number, default: 0 },
+  copper: { type: Number, default: 0 },
+  iron: { type: Number, default: 0 },
+  nickel: { type: Number, default: 0 },
+  silver: { type: Number, default: 0 },
+  golden: { type: Number, default: 0 }
+}, { _id: false });
+
+const goldenMineProgressSchema = new mongoose.Schema({
+  coins: { type: Number, default: 1000 },
+  mines: { type: [mineSchema], default: () => Array(10).fill(null) },
+  inventory: { type: goldenMineInventorySchema, default: () => ({}) },
+  truckLocation: { type: String, enum: ['mine', 'traveling_to_factory', 'factory', 'traveling_to_mine'], default: 'mine' },
+  truckDepartureTime: { type: Date, default: null },
+  truckCargo: { type: goldenMineInventorySchema, default: () => ({}) },
+  totalMinesOwned: { type: Number, default: 0 },
+  totalOreMined: { type: Number, default: 0 },
+  totalCoinsEarned: { type: Number, default: 0 },
   redeemedCodes: { type: [String], default: [] },
   lastPlayed: { type: Date, default: Date.now },
   playTime: { type: Number, default: 0 }
@@ -72,6 +108,7 @@ const platformCurrencySchema = new mongoose.Schema({
   platform: { type: Number, default: 100 },
   'happy-birds': { type: Number, default: 0 },
   'rich-garden': { type: Number, default: 0 },
+  'golden-mine': { type: Number, default: 0 },
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
@@ -125,7 +162,8 @@ const userSchema = new mongoose.Schema({
     of: gameProgressSchema,
     default: () => new Map([
       ['happy-birds', { unlocked: true, lastPlayed: new Date() }],
-      ['rich-garden', { unlocked: true, lastPlayed: new Date() }]
+      ['rich-garden', { unlocked: true, lastPlayed: new Date() }],
+      ['golden-mine', { unlocked: true, lastPlayed: new Date() }]
     ])
   },
   
@@ -136,12 +174,32 @@ const userSchema = new mongoose.Schema({
       coins: 1000,
       garden: Array(10).fill(null),
       inventory: {},
+      truckInventory: {},
       truckLocation: 'farm',
       truckDepartureTime: null,
       totalTreesPlanted: 0,
       totalFruitsCollected: 0,
       totalCoinsEarned: 0,
       highestGardenLevel: 1,
+      redeemedCodes: [],
+      lastPlayed: new Date(),
+      playTime: 0
+    })
+  },
+  
+  // Golden Mine specific data
+  goldenMineProgress: {
+    type: goldenMineProgressSchema,
+    default: () => ({
+      coins: 1000,
+      mines: Array(10).fill(null),
+      inventory: {},
+      truckLocation: 'mine',
+      truckDepartureTime: null,
+      truckCargo: {},
+      totalMinesOwned: 0,
+      totalOreMined: 0,
+      totalCoinsEarned: 0,
       redeemedCodes: [],
       lastPlayed: new Date(),
       playTime: 0

@@ -11,6 +11,11 @@ class GameManager {
                 name: 'Rich Garden',
                 path: '../games/rich-garden/game.js',
                 currency: 'fruits'
+            },
+            'golden-mine': {
+                name: 'Golden Mine',
+                path: '../games/golden-mine/game.js',
+                currency: 'ore'
             }
         };
         
@@ -42,6 +47,14 @@ class GameManager {
             } else if (gameId === 'rich-garden') {
                 const { default: RichGardenGame } = await import('../games/rich-garden/game.js');
                 this.currentGame = new RichGardenGame();
+                
+                // ✅ Передаем gameManager в игру
+                this.currentGame.setGameManager(this);
+                
+                await this.currentGame.start();
+            } else if (gameId === 'golden-mine') {
+                const { default: GoldenMineGame } = await import('../games/golden-mine/game.js');
+                this.currentGame = new GoldenMineGame();
                 
                 // ✅ Передаем gameManager в игру
                 this.currentGame.setGameManager(this);

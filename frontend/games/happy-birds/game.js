@@ -13,8 +13,8 @@ export default class HappyBirdsGame {
         this.statusRefreshInterval = null;
         this.messageTimeout = null;
         this.consoleMessages = true;
-        this.SIX_HOURS_SEC = 6 * 60 * 60;
-        this.ONE_HOUR_SEC = 60 * 60;
+        this.SIX_HOURS_SEC = 6 * 60 * 60; // Will be updated by loadConfig
+        this.ONE_HOUR_SEC = 60 * 60; // Will be updated by loadConfig
         this.config = {}; // Will be loaded from server
         
         // Truck system
@@ -46,14 +46,27 @@ export default class HappyBirdsGame {
             if (response.ok) {
                 this.config = await response.json();
                 if (this.consoleMessages) console.log('⚙️ Config loaded:', this.config);
+                
+                // Set timer constants based on fast mode
+                if (this.config.fastMode) {
+                    this.SIX_HOURS_SEC = 30; // 30 seconds for testing
+                    this.ONE_HOUR_SEC = 10; // 10 seconds for testing
+                } else {
+                    this.SIX_HOURS_SEC = 6 * 60 * 60; // 6 hours normal
+                    this.ONE_HOUR_SEC = 60 * 60; // 1 hour normal
+                }
             } else {
                 // Default config if endpoint fails
-                this.config = { enableRedeem: true, showRestartButton: true, consoleMessages: true };
+                this.config = { enableRedeem: true, showRestartButton: true, consoleMessages: true, fastMode: false };
+                this.SIX_HOURS_SEC = 6 * 60 * 60; // Default to normal
+                this.ONE_HOUR_SEC = 60 * 60; // Default to normal
                 if (this.consoleMessages) console.log('⚠️ Failed to load config, using defaults');
             }
         } catch (error) {
             // Default config if fetch fails
-            this.config = { enableRedeem: true, showRestartButton: true, consoleMessages: true };
+            this.config = { enableRedeem: true, showRestartButton: true, consoleMessages: true, fastMode: false };
+            this.SIX_HOURS_SEC = 6 * 60 * 60; // Default to normal
+            this.ONE_HOUR_SEC = 60 * 60; // Default to normal
             if (this.consoleMessages) console.log('⚠️ Error loading config:', error);
         }
     }
@@ -196,24 +209,14 @@ export default class HappyBirdsGame {
     async collectEggs() {
         if (this.consoleMessages) console.log('🥚 Collect button clicked');
 
-        if (!this.productionStart) {
-            this.showGameMessage('Game data not loaded yet. Please wait.', 'error');
-            return;
-        }
-
-        // Check if collection is ready (6 hours since last save/collect)
-        const lastSaveTime = this.lastSaveTime || this.productionStart;
-        const timeSinceLast = (Date.now() - lastSaveTime.getTime()) / 1000;
+        // Frontend check to prevent unnecessary requests
+        const timeSinceLast = (Date.now() - (this.lastSaveTime?.getTime() || 0)) / 1000;
         if (timeSinceLast < this.SIX_HOURS_SEC) {
-            const hoursLeft = Math.ceil((this.SIX_HOURS_SEC - timeSinceLast) / 3600);
-            this.showGameMessage(`Collection not ready! ${hoursLeft} hours left.`, 'info');
-            return;
-        }
-
-        // Check if there are any eggs to collect
-        const totalProduced = Object.values(this.produced).reduce((sum, eggs) => sum + eggs, 0);
-        if (totalProduced === 0) {
-            this.showGameMessage('No eggs to collect yet! Wait for your birds to produce some.', 'info');
+            const remaining = this.SIX_HOURS_SEC - timeSinceLast;
+            const hoursLeft = Math.floor(remaining / 3600);
+            const minsLeft = Math.floor((remaining % 3600) / 60);
+            const secsLeft = Math.floor(remaining % 60);
+            this.showGameMessage(`Collection not ready! ${hoursLeft}h ${minsLeft}m ${secsLeft}s left.`, 'info');
             return;
         }
 
@@ -224,7 +227,7 @@ export default class HappyBirdsGame {
                 return;
             }
 
-            console.log(`📡 Sending collect request. Produced eggs: ${totalProduced}`);
+            console.log(`📡 Sending collect request`);
 
             const response = await fetch('/api/game/collect', {
                 method: 'POST',
@@ -236,12 +239,24 @@ export default class HappyBirdsGame {
             console.log('📡 Collect response:', data);
 
             if (data.success) {
+                // The backend is the source of truth. Update frontend state from response.
                 this.eggs = data.eggs;
+                this.savedProduced = data.collected; // The backend sends what was collected
+                this.lastSaveTime = new Date(); // Sync with backend's reset
+
                 this.updateUI();
                 this.animateCollection();
-                this.showGameMessage('Eggs collected!', 'success');
-                // Refresh status to ensure sync
-                setTimeout(() => this.refreshGameStatus(), 1000);
+
+                const totalCollected = Object.values(data.collected).reduce((sum, amount) => sum + amount, 0);
+                
+                if (totalCollected > 0) {
+                    this.showGameMessage(`Eggs collected! Got ${totalCollected} eggs.`, 'success');
+                } else {
+                    this.showGameMessage(`No new eggs to collect.`, 'info');
+                }
+                
+                // Refresh status to ensure full sync
+                setTimeout(() => this.refreshGameStatus(), 500);
             } else {
                 this.showGameMessage(data.error || 'Failed to collect eggs', 'error');
             }
@@ -798,9 +813,11 @@ export default class HappyBirdsGame {
                 if (timeSinceLast >= this.SIX_HOURS_SEC) {
                     timerTextEl.textContent = 'Collection ready in: Ready';
                 } else {
-                    const hoursLeft = Math.floor((this.SIX_HOURS_SEC - timeSinceLast) / 3600);
-                    const minsLeft = Math.floor(((this.SIX_HOURS_SEC - timeSinceLast) % 3600) / 60);
-                    timerTextEl.textContent = `Collection ready in: ${hoursLeft}h ${minsLeft}m`;
+                    const remaining = this.SIX_HOURS_SEC - timeSinceLast;
+                    const hoursLeft = Math.floor(remaining / 3600);
+                    const minsLeft = Math.floor((remaining % 3600) / 60);
+                    const secsLeft = Math.floor(remaining % 60);
+                    timerTextEl.textContent = `Collection ready in: ${hoursLeft}h ${minsLeft}m ${secsLeft}s`;
                 }
             }
         }
