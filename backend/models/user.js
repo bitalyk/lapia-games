@@ -88,6 +88,29 @@ const goldenMineProgressSchema = new mongoose.Schema({
   playTime: { type: Number, default: 0 }
 }, { _id: false });
 
+// Cat Chess Schemas
+const catSchema = new mongoose.Schema({
+  level: { type: Number, required: true },
+  timerStart: { type: Date, default: null }
+}, { _id: false });
+
+const specialCatSchema = new mongoose.Schema({
+  type: { type: String, required: true },
+  rarity: { type: String, required: true },
+  form: { type: String, required: true, enum: ['common', 'gold'] }
+}, { _id: false });
+
+const catChessProgressSchema = new mongoose.Schema({
+  coins: { type: Number, default: 1000 },
+  specialCurrency: { type: Number, default: 0 },
+  board: { type: [catSchema], default: () => Array(64).fill(null) },
+  unlockedLevels: { type: [Number], default: () => [1] },
+  specialInventory: { type: [specialCatSchema], default: () => [] },
+  redeemedCodes: { type: [String], default: [] },
+  lastPlayed: { type: Date, default: Date.now },
+  playTime: { type: Number, default: 0 }
+}, { _id: false });
+
 const platformStatsSchema = new mongoose.Schema({
   totalPlayTime: { type: Number, default: 0 },
   gamesPlayed: { type: Number, default: 1 },
@@ -163,7 +186,8 @@ const userSchema = new mongoose.Schema({
     default: () => new Map([
       ['happy-birds', { unlocked: true, lastPlayed: new Date() }],
       ['rich-garden', { unlocked: true, lastPlayed: new Date() }],
-      ['golden-mine', { unlocked: true, lastPlayed: new Date() }]
+      ['golden-mine', { unlocked: true, lastPlayed: new Date() }],
+      ['cat-chess', { unlocked: true, lastPlayed: new Date() }]
     ])
   },
   
@@ -200,6 +224,21 @@ const userSchema = new mongoose.Schema({
       totalMinesOwned: 0,
       totalOreMined: 0,
       totalCoinsEarned: 0,
+      redeemedCodes: [],
+      lastPlayed: new Date(),
+      playTime: 0
+    })
+  },
+  
+  // Cat Chess specific data
+  catChessProgress: {
+    type: catChessProgressSchema,
+    default: () => ({
+      coins: 1000,
+      specialCurrency: 0,
+      board: Array(64).fill(null),
+      unlockedLevels: [1],
+      specialInventory: [],
       redeemedCodes: [],
       lastPlayed: new Date(),
       playTime: 0

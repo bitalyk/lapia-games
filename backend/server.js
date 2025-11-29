@@ -14,6 +14,7 @@ import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
 import richGardenRoutes from "./routes/rich-garden.js";
 import goldenMineRoutes from "./routes/golden-mine.js";
+import catChessRoutes from "./routes/cat-chess.js";
 
 // Mine configuration for progress saving
 const MINE_TYPES = {
@@ -182,6 +183,10 @@ app.use("/api/rich-garden", richGardenRoutes);
 app.use("/api/golden-mine", goldenMineRoutes);
 console.log('⛏️ Golden Mine API available at /api/golden-mine');
 
+// Подключаем роуты Cat Chess
+app.use("/api/cat-chess", catChessRoutes);
+console.log('🐱 Cat Chess API available at /api/cat-chess');
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ 
@@ -207,6 +212,7 @@ app.listen(PORT, () => {
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`📊 Platform API available at /api/platform`);
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🎮 Game API available at /api/game`);
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🌳 Rich Garden API available at /api/rich-garden`);
+  if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🐱 Cat Chess API available at /api/cat-chess`);
   if (process.env.CONSOLE_MESSAGES === 'true') console.log(`🔐 Auth API available at /api/users`);
 });
 

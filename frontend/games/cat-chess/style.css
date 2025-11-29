@@ -1,0 +1,365 @@
+.cat-chess-game {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.back-button {
+    padding: 8px 16px;
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.back-button:hover {
+    background: #5a6268;
+}
+
+.game-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.stat-card h3 {
+    margin: 0 0 10px 0;
+    color: #666;
+    font-size: 0.9em;
+}
+
+.stat-value {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #333;
+}
+
+.chessboard-section {
+    margin-bottom: 30px;
+}
+
+.chessboard-section h3 {
+    margin-bottom: 15px;
+    color: #e2e8f0;
+}
+
+.chessboard {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    gap: 3px;
+    width: min(85vw, 640px);
+    aspect-ratio: 1;
+    margin: 0 auto;
+    border: 3px solid #333;
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
+}
+
+.cell {
+    aspect-ratio: 1;
+    background: #f0d9b5;
+    border: 1px solid rgba(51, 51, 51, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    font-size: 0.9em;
+}
+
+.cell.dark {
+    background: #b58863;
+}
+
+.cell:hover {
+    background: #fff3cd;
+}
+
+.cell.dark:hover {
+    background: #a0724f;
+}
+
+.cat {
+    width: 92%;
+    height: 92%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.95);
+    border-radius: 8px;
+    padding: 6px 4px;
+    box-sizing: border-box;
+    color: #1a1f2e;
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4);
+    transition: transform 0.15s ease;
+}
+
+.cat:hover {
+    transform: scale(1.03);
+}
+
+.cat-level {
+    font-weight: bold;
+    font-size: 0.95em;
+    color: #111827;
+}
+
+.cat-multiplier {
+    font-size: 0.7em;
+    color: #0f172a;
+    margin-bottom: 2px;
+}
+
+.cat-timer {
+    font-size: 0.7em;
+    color: #1f2937;
+}
+
+.cat-progress {
+    width: 80%;
+    height: 6px;
+    border-radius: 4px;
+    background: rgba(148, 163, 184, 0.4);
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.cat-progress-inner {
+    height: 100%;
+    background: linear-gradient(90deg, #60a5fa, #22d3ee);
+}
+
+.cat.grown {
+    background: #d4edda;
+    border: 2px solid #28a745;
+    color: #0f5132;
+}
+
+.cat.grown .cat-timer {
+    color: #0f5132;
+}
+
+.cat.grown .cat-progress-inner {
+    background: linear-gradient(90deg, #4ade80, #22c55e);
+}
+
+.cat-sell-btn {
+    margin-top: 6px;
+    padding: 4px 6px;
+    font-size: 0.65em;
+    border: none;
+    border-radius: 4px;
+    background: #0f5132;
+    color: white;
+    cursor: pointer;
+}
+
+.cat-sell-btn:hover {
+    background: #0a3f24;
+}
+
+.buy-controls {
+    margin-bottom: 30px;
+}
+
+.buy-controls h3 {
+    margin-bottom: 15px;
+    color: #e2e8f0;
+}
+
+.buy-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.buy-btn {
+    padding: 8px 12px;
+    background: #007bff;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.buy-btn:hover {
+    background: #0056b3;
+}
+
+.buy-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    color: rgba(255,255,255,0.7);
+}
+
+.special-inventory {
+    margin-bottom: 20px;
+}
+
+.special-inventory h3 {
+    margin-bottom: 15px;
+    color: #e2e8f0;
+}
+
+.special-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.special-cat {
+    aspect-ratio: 1;
+    background: white;
+    border: 2px solid #333;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    font-size: 0.7em;
+    text-align: center;
+    position: relative;
+    color: #1a1f2e;
+}
+
+.special-name {
+    font-weight: 600;
+    font-size: 0.75em;
+}
+
+.special-rarity {
+    font-size: 0.7em;
+}
+
+.special-form {
+    font-size: 0.65em;
+    color: #475569;
+}
+
+.special-value {
+    font-size: 0.7em;
+    color: #0f172a;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.special-cat.gold {
+    border-color: gold;
+    background: #fffacd;
+    color: #7c5a00;
+}
+
+.sell-special-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    padding: 2px 4px;
+    font-size: 0.6em;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.sell-special-btn:hover {
+    background: #c82333;
+}
+
+.collection-controls {
+    text-align: center;
+}
+
+.collection-summary {
+    text-align: center;
+    margin-bottom: 10px;
+    font-size: 0.85em;
+    color: #475569;
+}
+
+.collection-summary.ready {
+    color: #0f5132;
+    font-weight: 600;
+}
+
+.collection-summary.full {
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.control-btn {
+    padding: 10px 20px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+}
+
+.control-btn:hover {
+    background: #218838;
+}
+
+.upgrade-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    justify-content: center;
+    text-align: center;
+    color: #475569;
+    font-size: 0.8em;
+}
+
+.upgrade-controls button {
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: none;
+    background: #f97316;
+    color: white;
+    font-size: 0.75em;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.upgrade-controls button:hover {
+    background: #c2410c;
+}
+
+.game-message {
+    margin-top: 20px;
+    padding: 10px;
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    border-radius: 4px;
+    color: #0c5460;
+    text-align: center;
+}

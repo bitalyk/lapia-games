@@ -16,6 +16,11 @@ class GameManager {
                 name: 'Golden Mine',
                 path: '../games/golden-mine/game.js',
                 currency: 'ore'
+            },
+            'cat-chess': {
+                name: 'Cat Chess',
+                path: '../games/cat-chess/game.js',
+                currency: 'cats'
             }
         };
         
@@ -55,6 +60,14 @@ class GameManager {
             } else if (gameId === 'golden-mine') {
                 const { default: GoldenMineGame } = await import('../games/golden-mine/game.js');
                 this.currentGame = new GoldenMineGame();
+                
+                // ✅ Передаем gameManager в игру
+                this.currentGame.setGameManager(this);
+                
+                await this.currentGame.start();
+            } else if (gameId === 'cat-chess') {
+                const { default: CatChessGame } = await import('../games/cat-chess/game.js');
+                this.currentGame = new CatChessGame();
                 
                 // ✅ Передаем gameManager в игру
                 this.currentGame.setGameManager(this);

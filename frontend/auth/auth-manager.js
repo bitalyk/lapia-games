@@ -368,7 +368,7 @@ export class AuthManager {
     async launchGame(gameId) {
         console.log(`🎮 Launching game: ${gameId}`);
         
-        if (gameId === 'happy-birds' || gameId === 'rich-garden' || gameId === 'golden-mine') {
+        if (gameId === 'happy-birds' || gameId === 'rich-garden' || gameId === 'golden-mine' || gameId === 'cat-chess') {
             try {
                 if (window.gameManager) {
                     await window.gameManager.launchGame(gameId);
@@ -549,6 +549,7 @@ removeMenuEventListeners() {
             'Happy Birds': 'happy-birds',
             'Rich Garden': 'rich-garden',
             'Golden Mine': 'golden-mine',
+            'Cat Chess': 'cat-chess',
             'Target Master': 'target-master', 
             'Puzzle Quest': 'puzzle-quest',
             'Speed Runner': 'speed-runner'
@@ -571,6 +572,7 @@ removeMenuEventListeners() {
             const hbLastPlayed = document.getElementById('hb-last-played');
             const rgLastPlayed = document.getElementById('rg-last-played');
             const gmLastPlayed = document.getElementById('gm-last-played');
+            const ccLastPlayed = document.getElementById('cc-last-played');
             
             // Обновляем имя пользователя
             if (usernameDisplay && this.currentUser) {
@@ -609,6 +611,12 @@ removeMenuEventListeners() {
             if (gmLastPlayed) {
                 const lastPlayed = this.getGoldenMineLastPlayed();
                 gmLastPlayed.textContent = lastPlayed;
+            }
+            
+            // Обновляем последнюю игру Cat Chess
+            if (ccLastPlayed) {
+                const lastPlayed = this.getCatChessLastPlayed();
+                ccLastPlayed.textContent = lastPlayed;
             }
             
             console.log('📊 Menu user info updated');
@@ -667,6 +675,21 @@ removeMenuEventListeners() {
             return 'Never';
         } catch (error) {
             console.error('Error getting Golden Mine last played time:', error);
+            return 'Unknown';
+        }
+    }
+
+    // ✅ ДОБАВЛЯЕМ: Получение времени последней игры Cat Chess
+    getCatChessLastPlayed() {
+        try {
+            if (this.currentUser?.gamesProgress?.['cat-chess']?.lastPlayed) {
+                const lastPlayed = new Date(this.currentUser.gamesProgress['cat-chess'].lastPlayed);
+                return lastPlayed.toLocaleDateString();
+            }
+            
+            return 'Never';
+        } catch (error) {
+            console.error('Error getting Cat Chess last played time:', error);
             return 'Unknown';
         }
     }

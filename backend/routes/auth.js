@@ -37,6 +37,17 @@ router.post("/register", async (req, res) => {
       username,
       passwordHash: hash,
       email: email || null,
+      // Initialize Cat Chess with starting coins
+      catChessProgress: {
+        coins: 1000,
+        specialCurrency: 0,
+        board: Array(64).fill(null),
+        unlockedLevels: [1],
+        specialInventory: [],
+        redeemedCodes: [],
+        lastPlayed: new Date(),
+        playTime: 0
+      }
       // Platform data initialized by default in schema
     });
 
