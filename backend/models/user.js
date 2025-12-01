@@ -89,26 +89,36 @@ const goldenMineProgressSchema = new mongoose.Schema({
 }, { _id: false });
 
 // Cat Chess Schemas
-const catSchema = new mongoose.Schema({
-  level: { type: Number, required: true },
-  timerStart: { type: Date, default: null }
-}, { _id: false });
+const catChessBoardCellSchema = new mongoose.Schema({
+  kind: { type: String, enum: ['cat', 'special'], default: 'cat' },
+  level: { type: Number },
+  timerStart: { type: Date, default: null },
+  id: { type: String },
+  type: { type: String },
+  form: { type: String, enum: ['common', 'golden'], default: 'common' },
+  baseValue: { type: Number, default: 0 },
+  createdAt: { type: Date }
+}, { _id: false, strict: false });
 
-const specialCatSchema = new mongoose.Schema({
+const catChessSpecialInventorySchema = new mongoose.Schema({
+  id: { type: String, required: true },
   type: { type: String, required: true },
-  rarity: { type: String, required: true },
-  form: { type: String, required: true, enum: ['common', 'gold'] }
-}, { _id: false });
+  form: { type: String, enum: ['common', 'golden'], default: 'common' },
+  baseValue: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+}, { _id: false, strict: false });
 
 const catChessProgressSchema = new mongoose.Schema({
   coins: { type: Number, default: 1000 },
   specialCurrency: { type: Number, default: 0 },
-  board: { type: [catSchema], default: () => Array(64).fill(null) },
+  board: { type: [catChessBoardCellSchema], default: () => Array(64).fill(null) },
   unlockedLevels: { type: [Number], default: () => [1] },
-  specialInventory: { type: [specialCatSchema], default: () => [] },
+  specialInventory: { type: [catChessSpecialInventorySchema], default: () => [] },
   redeemedCodes: { type: [String], default: [] },
   lastPlayed: { type: Date, default: Date.now },
-  playTime: { type: Number, default: 0 }
+  playTime: { type: Number, default: 0 },
+  starterGranted: { type: Boolean, default: true },
+  sellBonuses: { type: mongoose.Schema.Types.Mixed, default: () => ({}) }
 }, { _id: false });
 
 const platformStatsSchema = new mongoose.Schema({

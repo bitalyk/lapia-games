@@ -26,13 +26,42 @@
         <div id="cc-chessboard" class="chessboard">
             <!-- 8x8 grid generated dynamically -->
         </div>
+        <div class="board-tools">
+            <div id="cc-sell-dropzone" class="sell-dropzone" draggable="false">
+                <div class="sell-title">Quick Sell</div>
+                <div class="sell-desc">Drag a ready cat here to sell instantly.</div>
+            </div>
+            <div id="cc-cat-detail" class="cat-detail hidden">
+                <div class="detail-header">
+                    <span id="cc-cat-detail-title">Select a cat</span>
+                    <button id="cc-cat-detail-close" class="detail-close" aria-label="Close details">&times;</button>
+                </div>
+                <div class="detail-body">
+                    <div class="detail-row"><span>Status</span><span id="cc-cat-detail-status">None</span></div>
+                    <div class="detail-row"><span>Sell Price</span><span id="cc-cat-detail-sell">0</span></div>
+                    <div class="detail-row"><span>Buff</span><span id="cc-cat-detail-buff">×1.00</span></div>
+                    <div class="detail-row"><span>Sell Bonus</span><span id="cc-cat-detail-bonus">×1.00</span></div>
+                    <div class="detail-row"><span>Time Left</span><span id="cc-cat-detail-time">0s</span></div>
+                </div>
+                <div class="detail-hint">Drag this cat to the quick sell slot or special inventory.</div>
+            </div>
+        </div>
+        <div class="board-actions">
+            <button id="cc-sell-all" class="action-btn action-primary">Sell All Cats</button>
+            <button id="cc-open-shop" class="action-btn">Open Shop</button>
+        </div>
     </div>
 
-    <!-- Buy Controls -->
-    <div class="buy-controls">
-        <h3>Buy Cats</h3>
-        <div id="cc-buy-buttons" class="buy-buttons">
-            <!-- Generated dynamically -->
+    <!-- Shop Modal -->
+    <div id="cc-shop-modal" class="shop-modal" aria-hidden="true">
+        <div class="shop-dialog" role="dialog" aria-modal="true" aria-labelledby="cc-shop-title">
+            <div class="shop-header">
+                <h3 id="cc-shop-title">Cat Shop</h3>
+                <button id="cc-shop-close" class="shop-close" aria-label="Close shop">&times;</button>
+            </div>
+            <div id="cc-buy-buttons" class="shop-list">
+                <!-- Generated dynamically -->
+            </div>
         </div>
     </div>
 
@@ -42,11 +71,31 @@
         <div id="cc-special-inventory" class="special-grid">
             <!-- Up to 10 special cats -->
         </div>
-        <div class="collection-controls">
-            <button id="cc-sell-collection" class="control-btn">Sell Collection (×2 bonus)</button>
+        <div id="cc-upgrade-options" class="upgrade-controls"></div>
+        <div class="collection-panel">
+            <div class="collection-row" data-form="common">
+                <div class="collection-row-header">
+                    <div class="collection-title">
+                        <span class="collection-name">Common Collection</span>
+                        <span id="cc-common-progress" class="collection-progress">0/5 types</span>
+                    </div>
+                    <button id="cc-sell-common" class="collection-sell-btn" disabled>Sell Common Set</button>
+                </div>
+                <div id="cc-common-track" class="collection-track"></div>
+            </div>
+            <div class="collection-row" data-form="golden">
+                <div class="collection-row-header">
+                    <div class="collection-title">
+                        <span class="collection-name">Golden Collection</span>
+                        <span id="cc-golden-progress" class="collection-progress">0/5 types</span>
+                    </div>
+                    <button id="cc-sell-golden" class="collection-sell-btn" disabled>Sell Golden Set</button>
+                </div>
+                <div id="cc-golden-track" class="collection-track"></div>
+            </div>
         </div>
     </div>
 
-    <!-- Messages -->
-    <div id="cc-message" class="game-message"></div>
+    <!-- Toasts -->
+    <div id="cc-toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 </div>
