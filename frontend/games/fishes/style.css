@@ -1,0 +1,628 @@
+.fishes-game {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    color: #123;
+}
+
+.fishes-game .game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, #0b7285, #1971c2);
+    color: #fff;
+    padding: 20px 24px;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(11, 114, 133, 0.25);
+}
+
+.fishes-game .game-header h1 {
+    margin: 0;
+    font-size: 32px;
+    font-weight: 700;
+}
+
+.fishes-game .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.fishes-game .header-controls .resource {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-weight: 600;
+}
+
+.fishes-game .header-controls .resource .icon {
+    font-size: 18px;
+}
+
+.fishes-game .header-controls .back-button {
+    background: #fff;
+    color: #0b7285;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fishes-game .header-controls .back-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.fishes-game .game-content {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+
+.fishes-game .aquarium-panel {
+    flex: 1 1 auto;
+    background: #f8fbff;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 12px 30px rgba(25, 113, 194, 0.12);
+    border: 1px solid rgba(25, 113, 194, 0.12);
+}
+
+.fishes-game .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.fishes-game .panel-header h2,
+.fishes-game .panel-header h3 {
+    margin: 0;
+    color: #0b7285;
+    font-weight: 700;
+}
+
+.fishes-game .panel-header .capacity,
+.fishes-game .panel-header .restock {
+    font-size: 14px;
+    color: #0b7285;
+    background: rgba(11, 114, 133, 0.12);
+    padding: 6px 12px;
+    border-radius: 999px;
+}
+
+.fishes-game .aquarium-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--columns, 3), minmax(0, 1fr));
+    gap: 18px;
+}
+
+.fishes-game .fish-card {
+    background: linear-gradient(145deg, #ffffff, #e6f4ff);
+    border-radius: 16px;
+    padding: 18px;
+    border: 1px solid rgba(25, 113, 194, 0.16);
+    box-shadow: 0 8px 18px rgba(12, 74, 110, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.fishes-game .fish-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fishes-game .fish-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0b7285;
+}
+
+.fishes-game .fish-tier,
+.fishes-game .fish-level {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1864ab;
+}
+
+.fishes-game .fish-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+    color: #1c4966;
+}
+
+.fishes-game .fish-info .info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.fishes-game .feed-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 0;
+}
+
+.fishes-game .feed-progress .progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(11, 114, 133, 0.12);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.fishes-game .feed-progress .progress-fill {
+    height: 100%;
+    background: linear-gradient(135deg, #38d9a9, #12b886);
+    transition: width 0.2s ease;
+}
+
+.fishes-game .feed-progress .progress-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0b7285;
+}
+
+.fishes-game .fish-info .cooldown.ready {
+    color: #2b8a3e;
+    font-weight: 600;
+}
+
+.fishes-game .fish-info .cooldown.paused {
+    color: #e8590c;
+    font-weight: 600;
+}
+
+.fishes-game .fish-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.fishes-game .fish-actions button {
+    flex: 1;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fishes-game .fish-actions .feed-button {
+    background: #0b7285;
+    color: #fff;
+}
+
+.fishes-game .fish-actions .sell-button {
+    background: #f59f00;
+    color: #fff;
+}
+
+.fishes-game .fish-actions button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.fishes-game .fish-actions button:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.16);
+}
+
+.fishes-game .fish-slot.empty {
+    background: rgba(230, 244, 255, 0.6);
+    border: 1px dashed rgba(12, 74, 110, 0.4);
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    color: #0b7285;
+}
+
+.fishes-game .fish-slot .empty-title {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.fishes-game .fish-slot .empty-text {
+    font-size: 14px;
+}
+
+.fishes-game .fish-slot .open-shop {
+    margin-top: 8px;
+    background: #0b7285;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 18px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.fishes-game .fish-slot .open-shop:hover {
+    transform: translateY(-1px);
+}
+
+.fishes-game .expand-button {
+    margin-top: 20px;
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: none;
+    background: linear-gradient(135deg, #1864ab, #1c7ed6);
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fishes-game .expand-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.fishes-game .expand-button:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 25px rgba(24, 100, 171, 0.24);
+}
+
+.fishes-game .expand-hint {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #0b7285;
+    text-align: center;
+}
+
+.fishes-game .sidebar {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.fishes-game .shop-panel,
+.fishes-game .food-panel,
+.fishes-game .redeem-panel {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 12px 28px rgba(12, 74, 110, 0.15);
+    border: 1px solid rgba(12, 74, 110, 0.08);
+}
+
+.fishes-game .shop-items {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.fishes-game .shop-card {
+    background: #f1f9ff;
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border: 1px solid rgba(25, 113, 194, 0.2);
+}
+
+.fishes-game .shop-card .shop-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+    color: #0b7285;
+}
+
+.fishes-game .shop-card .shop-details {
+    font-size: 14px;
+    color: #1c4966;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fishes-game .shop-card .detail-row {
+    display: flex;
+    justify-content: space-between;
+}
+
+.fishes-game .shop-card .shop-desc {
+    margin: 0;
+    font-size: 13px;
+    color: #0f435b;
+}
+
+.fishes-game .shop-card .buy-fish-button {
+    border: none;
+    background: linear-gradient(135deg, #1098ad, #1c7ed6);
+    color: #fff;
+    border-radius: 12px;
+    padding: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fishes-game .shop-card .buy-fish-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.fishes-game .shop-card .buy-fish-button:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(16, 152, 173, 0.25);
+}
+
+.fishes-game .food-panel .food-actions {
+    display: flex;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.fishes-game .food-panel button {
+    flex: 1;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #0b7285;
+    color: #fff;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fishes-game .food-panel button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.fishes-game .food-panel button:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(11, 114, 133, 0.25);
+}
+
+.fishes-game .redeem-panel .redeem-input-group {
+    display: flex;
+    gap: 8px;
+}
+
+.fishes-game .redeem-panel input {
+    flex: 1;
+    border-radius: 10px;
+    border: 1px solid rgba(11, 114, 133, 0.3);
+    padding: 10px 12px;
+    font-size: 14px;
+}
+
+.fishes-game .redeem-panel button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 600;
+    background: #1098ad;
+    color: #fff;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.fishes-game .redeem-panel button:hover {
+    transform: translateY(-1px);
+}
+
+.fishes-game .message-banner {
+    background: linear-gradient(135deg, #12b886, #0ca678);
+    color: #fff;
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-align: center;
+    box-shadow: 0 12px 30px rgba(12, 166, 120, 0.3);
+}
+
+.fishes-game .message-banner.error {
+    background: linear-gradient(135deg, #f03e3e, #e03131);
+}
+
+.fishes-game .message-banner.info {
+    background: linear-gradient(135deg, #1971c2, #1864ab);
+}
+
+.feed-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(9, 32, 63, 0.55);
+    backdrop-filter: blur(4px);
+    display: grid;
+    place-items: center;
+    z-index: 2000;
+    padding: 24px;
+    overflow-y: auto;
+}
+
+.feed-modal-backdrop[hidden] {
+    display: none;
+}
+
+.feed-modal-backdrop .feed-modal-dialog {
+    width: min(420px, 100%);
+    max-height: calc(100vh - 96px);
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 0 20px 45px rgba(9, 32, 63, 0.25);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    border: 1px solid rgba(9, 32, 63, 0.08);
+    overflow-y: auto;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-header h3 {
+    margin: 0;
+    font-size: 20px;
+    color: #0b7285;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-close {
+    background: transparent;
+    border: none;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    color: #0b7285;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    color: #0f435b;
+    font-size: 14px;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-section {
+    font-weight: 600;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-slider {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-slider .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-slider .slider-row input[type="range"] {
+    flex: 1;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-slider .max-button {
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-weight: 600;
+    background: rgba(11, 114, 133, 0.18);
+    color: #0b7285;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-slider .max-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(11, 114, 133, 0.18);
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-slider .max-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none;
+    box-shadow: none;
+}
+
+.feed-modal-backdrop .feed-modal-dialog input[data-role="feed-modal-slider"],
+.feed-modal-backdrop .feed-modal-dialog input[data-role="buy-food-slider"] {
+    width: 100%;
+    accent-color: #0b7285;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .slider-value {
+    font-weight: 700;
+    color: #0b7285;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-hint {
+    font-size: 13px;
+    color: #1864ab;
+    line-height: 1.4;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-actions .confirm-button,
+.feed-modal-backdrop .feed-modal-dialog .modal-actions .cancel-button {
+    flex: 1;
+    border: none;
+    border-radius: 12px;
+    padding: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-actions .confirm-button {
+    background: linear-gradient(135deg, #12b886, #0ca678);
+    color: #fff;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-actions .cancel-button {
+    background: rgba(11, 114, 133, 0.12);
+    color: #0b7285;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.feed-modal-backdrop .feed-modal-dialog .modal-actions button:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(12, 74, 110, 0.2);
+}
+
+@media (max-width: 1080px) {
+    .fishes-game .game-content {
+        flex-direction: column;
+    }
+
+    .fishes-game .sidebar {
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .fishes-game .sidebar > * {
+        flex: 1 1 300px;
+    }
+}

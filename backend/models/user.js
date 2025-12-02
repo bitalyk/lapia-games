@@ -121,6 +121,58 @@ const catChessProgressSchema = new mongoose.Schema({
   sellBonuses: { type: mongoose.Schema.Types.Mixed, default: () => ({}) }
 }, { _id: false });
 
+const fishSlotSchema = new mongoose.Schema({
+  id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  type: { type: String, required: true, enum: ['little', 'golden', 'middle', 'rainbow', 'big', 'scary'] },
+  level: { type: Number, default: 1, min: 1, max: 6 },
+  foodConsumed: { type: Number, default: 0, min: 0 },
+  feedProgress: { type: Number, default: 0, min: 0 },
+  feedsUsed: { type: Number, default: 0, min: 0, max: 3 },
+  lastFedAt: { type: Date, default: null },
+  cooldownEndsAt: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const fishesProgressSchema = new mongoose.Schema({
+  coins: { type: Number, default: 1000, min: 0 },
+  food: { type: Number, default: 10, min: 0 },
+  aquariumSize: { type: Number, default: 1, min: 1, max: 20 },
+  fishes: { type: [fishSlotSchema], default: () => [] },
+  shopPurchases: {
+    type: Map,
+    of: Number,
+    default: () => new Map()
+  },
+  shopRestockAt: { type: Date, default: null },
+  lastFreeFoodAt: { type: Date, default: null },
+  redeemedCodes: { type: [String], default: [] }
+}, { _id: false });
+
+function createDefaultFishesProgress() {
+  return {
+    coins: 1000,
+    food: 10,
+    aquariumSize: 1,
+    fishes: [
+      {
+        id: new mongoose.Types.ObjectId().toString(),
+        type: 'little',
+        level: 1,
+        foodConsumed: 0,
+        feedProgress: 0,
+        feedsUsed: 0,
+        lastFedAt: null,
+        cooldownEndsAt: null,
+        createdAt: new Date()
+      }
+    ],
+    shopPurchases: new Map(),
+    shopRestockAt: null,
+    lastFreeFoodAt: null,
+    redeemedCodes: []
+  };
+}
+
 const platformStatsSchema = new mongoose.Schema({
   totalPlayTime: { type: Number, default: 0 },
   gamesPlayed: { type: Number, default: 1 },
@@ -142,6 +194,7 @@ const platformCurrencySchema = new mongoose.Schema({
   'happy-birds': { type: Number, default: 0 },
   'rich-garden': { type: Number, default: 0 },
   'golden-mine': { type: Number, default: 0 },
+  'fishes': { type: Number, default: 0 },
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
@@ -197,7 +250,8 @@ const userSchema = new mongoose.Schema({
       ['happy-birds', { unlocked: true, lastPlayed: new Date() }],
       ['rich-garden', { unlocked: true, lastPlayed: new Date() }],
       ['golden-mine', { unlocked: true, lastPlayed: new Date() }],
-      ['cat-chess', { unlocked: true, lastPlayed: new Date() }]
+      ['cat-chess', { unlocked: true, lastPlayed: new Date() }],
+      ['fishes', { unlocked: true, lastPlayed: new Date() }]
     ])
   },
   
@@ -253,6 +307,12 @@ const userSchema = new mongoose.Schema({
       lastPlayed: new Date(),
       playTime: 0
     })
+  },
+  
+  // Fishes specific data
+  fishesProgress: {
+    type: fishesProgressSchema,
+    default: () => createDefaultFishesProgress()
   },
   
   inventory: {

@@ -21,6 +21,11 @@ class GameManager {
                 name: 'Cat Chess',
                 path: '../games/cat-chess/game.js',
                 currency: 'cats'
+            },
+            'fishes': {
+                name: 'Fishes',
+                path: '../games/fishes/game.js',
+                currency: 'fish'
             }
         };
         
@@ -72,6 +77,13 @@ class GameManager {
                 // ✅ Передаем gameManager в игру
                 this.currentGame.setGameManager(this);
                 
+                await this.currentGame.start();
+            } else if (gameId === 'fishes') {
+                const { default: FishesGame } = await import('../games/fishes/game.js');
+                this.currentGame = new FishesGame();
+
+                this.currentGame.setGameManager(this);
+
                 await this.currentGame.start();
             } else {
                 this.showError('Game not available yet');

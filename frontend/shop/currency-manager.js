@@ -3,10 +3,12 @@ export class CurrencyManager {
         this.currencies = {
             'platform': { name: 'Platform Tokens', symbol: '🪙', balance: 0 },
             'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 },
+            'fishes': { name: 'Aquarium Coins', symbol: '🐟', balance: 0 },
         };
         
         this.exchangeRates = {
             'happy-birds': 1000,
+            'fishes': 1200,
             'game2': 500,
             'game3': 750
         };
@@ -161,6 +163,7 @@ export class CurrencyManager {
         this.currencies = {
             'platform': { name: 'Platform Tokens', symbol: '🪙', balance: 100 },
             'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 },
+            'fishes': { name: 'Aquarium Coins', symbol: '🐟', balance: 0 },
         };
         this.saveBalances();
         this.updateUI();

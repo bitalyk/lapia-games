@@ -137,6 +137,7 @@ router.post("/currencies/exchange", async (req, res) => {
     // Курсы обмена (можно вынести в конфиг)
     const exchangeRates = {
       'happy-birds': 1000, // 1 platform token = 1000 bird eggs
+      'fishes': 1200,
       'platform': 1
     };
 

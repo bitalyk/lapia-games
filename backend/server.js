@@ -15,6 +15,7 @@ import usersRoutes from "./routes/users.js";
 import richGardenRoutes from "./routes/rich-garden.js";
 import goldenMineRoutes from "./routes/golden-mine.js";
 import catChessRoutes from "./routes/cat-chess.js";
+import fishesRoutes from "./routes/fishes.js";
 
 // Mine configuration for progress saving
 const MINE_TYPES = {
@@ -186,6 +187,10 @@ console.log('⛏️ Golden Mine API available at /api/golden-mine');
 // Подключаем роуты Cat Chess
 app.use("/api/cat-chess", catChessRoutes);
 console.log('🐱 Cat Chess API available at /api/cat-chess');
+
+// Подключаем роуты Fishes
+app.use("/api/fishes", fishesRoutes);
+console.log('🐟 Fishes API available at /api/fishes');
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

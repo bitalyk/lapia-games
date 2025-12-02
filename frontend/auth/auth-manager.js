@@ -70,7 +70,8 @@ export class AuthManager {
         // Инициализируем базовые валюты
         const initialCurrencies = {
             'platform': { name: 'Platform Tokens', symbol: '🪙', balance: 100 },
-            'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 }
+            'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 },
+            'fishes': { name: 'Aquarium Coins', symbol: '🐟', balance: 0 }
         };
         
         localStorage.setItem(`currency_balances_${userProfile.username}`, JSON.stringify(initialCurrencies));
@@ -89,7 +90,8 @@ export class AuthManager {
                 username: username,
                 registeredAt: new Date().toISOString(),
                 games: {
-                    'happy-birds': { unlocked: true, progress: {} }
+                    'happy-birds': { unlocked: true, progress: {} },
+                    'fishes': { unlocked: true, progress: {} }
                 },
                 platformStats: {
                     totalPlayTime: 0,
@@ -107,7 +109,8 @@ export class AuthManager {
         if (!saved) {
             const initialCurrencies = {
                 'platform': { name: 'Platform Tokens', symbol: '🪙', balance: 100 },
-                'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 }
+                'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 },
+                'fishes': { name: 'Aquarium Coins', symbol: '🐟', balance: 0 }
             };
             localStorage.setItem(`currency_balances_${username}`, JSON.stringify(initialCurrencies));
         }
@@ -368,7 +371,7 @@ export class AuthManager {
     async launchGame(gameId) {
         console.log(`🎮 Launching game: ${gameId}`);
         
-        if (gameId === 'happy-birds' || gameId === 'rich-garden' || gameId === 'golden-mine' || gameId === 'cat-chess') {
+        if (gameId === 'happy-birds' || gameId === 'rich-garden' || gameId === 'golden-mine' || gameId === 'cat-chess' || gameId === 'fishes') {
             try {
                 if (window.gameManager) {
                     await window.gameManager.launchGame(gameId);
@@ -550,6 +553,7 @@ removeMenuEventListeners() {
             'Rich Garden': 'rich-garden',
             'Golden Mine': 'golden-mine',
             'Cat Chess': 'cat-chess',
+            'Fishes': 'fishes',
             'Target Master': 'target-master', 
             'Puzzle Quest': 'puzzle-quest',
             'Speed Runner': 'speed-runner'
@@ -573,6 +577,7 @@ removeMenuEventListeners() {
             const rgLastPlayed = document.getElementById('rg-last-played');
             const gmLastPlayed = document.getElementById('gm-last-played');
             const ccLastPlayed = document.getElementById('cc-last-played');
+            const fgLastPlayed = document.getElementById('fg-last-played');
             
             // Обновляем имя пользователя
             if (usernameDisplay && this.currentUser) {
@@ -617,6 +622,11 @@ removeMenuEventListeners() {
             if (ccLastPlayed) {
                 const lastPlayed = this.getCatChessLastPlayed();
                 ccLastPlayed.textContent = lastPlayed;
+            }
+
+            if (fgLastPlayed) {
+                const lastPlayed = this.getFishesLastPlayed();
+                fgLastPlayed.textContent = lastPlayed;
             }
             
             console.log('📊 Menu user info updated');
@@ -690,6 +700,20 @@ removeMenuEventListeners() {
             return 'Never';
         } catch (error) {
             console.error('Error getting Cat Chess last played time:', error);
+            return 'Unknown';
+        }
+    }
+
+    getFishesLastPlayed() {
+        try {
+            if (this.currentUser?.gamesProgress?.['fishes']?.lastPlayed) {
+                const lastPlayed = new Date(this.currentUser.gamesProgress['fishes'].lastPlayed);
+                return lastPlayed.toLocaleDateString();
+            }
+
+            return 'Never';
+        } catch (error) {
+            console.error('Error getting Fishes last played time:', error);
             return 'Unknown';
         }
     }
