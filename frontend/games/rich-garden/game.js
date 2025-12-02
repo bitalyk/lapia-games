@@ -1042,6 +1042,11 @@ export default class RichGardenGame {
 
     // Show game message
     showGameMessage(message, type = 'info') {
+        if (window.toastManager) {
+            window.toastManager.show(message, type);
+            return;
+        }
+
         const messagesEl = document.getElementById('rg-messages');
         if (!messagesEl) return;
 
@@ -1051,7 +1056,6 @@ export default class RichGardenGame {
 
         messagesEl.appendChild(messageEl);
 
-        // Auto remove after 5 seconds
         setTimeout(() => {
             if (messageEl.parentNode) {
                 messageEl.remove();

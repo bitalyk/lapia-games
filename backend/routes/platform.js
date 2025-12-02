@@ -238,37 +238,4 @@ router.get("/inventory/:username", async (req, res) => {
   }
 });
 
-// Обновление времени игры
-router.post("/playtime", async (req, res) => {
-  try {
-    const { username, gameId, minutes } = req.body;
-    
-    const user = await User.findByUsername(username);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Обновляем общее время и время конкретной игры
-    user.platformStats.totalPlayTime = (user.platformStats.totalPlayTime || 0) + minutes;
-    
-    const gameProgress = user.gamesProgress.get(gameId) || {};
-    gameProgress.totalPlayTime = (gameProgress.totalPlayTime || 0) + minutes;
-    user.gamesProgress.set(gameId, gameProgress);
-
-    user.platformStats.lastLogin = new Date();
-    user.lastActive = new Date();
-
-    await user.save();
-
-    res.json({
-      success: true,
-      totalPlayTime: user.platformStats.totalPlayTime,
-      gamePlayTime: gameProgress.totalPlayTime
-    });
-  } catch (error) {
-    console.error("Playtime update error:", error);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
 export default router;

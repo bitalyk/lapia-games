@@ -34,6 +34,8 @@ export default class GoldenMineGame {
             rest: this.REST_TIME,
             truckTravel: this.TRUCK_TRAVEL_TIME
         };
+        this.lastTimerUpdate = null;
+        this.timerAccumulator = 0;
     }
 
     setGameManager(gameManager) {
@@ -260,6 +262,8 @@ export default class GoldenMineGame {
     }
 
     startGameLoop() {
+        this.lastTimerUpdate = Date.now();
+        this.timerAccumulator = 0;
         this.gameLoopInterval = setInterval(() => {
             if (!this.isRunning) return;
             this.updateTimers();
@@ -275,6 +279,25 @@ export default class GoldenMineGame {
     }
 
     updateTimers() {
+        const now = Date.now();
+
+        if (this.lastTimerUpdate === null) {
+            this.lastTimerUpdate = now;
+            this.timerAccumulator = 0;
+            return;
+        }
+
+        const elapsedMs = now - this.lastTimerUpdate;
+        this.lastTimerUpdate = now;
+        this.timerAccumulator += elapsedMs / 1000; // smooth out interval drift
+
+        const deltaSeconds = Math.floor(this.timerAccumulator);
+        if (deltaSeconds <= 0) {
+            return;
+        }
+
+        this.timerAccumulator -= deltaSeconds;
+
         this.mines.forEach((mine) => {
             if (!mine) return;
 
@@ -284,7 +307,7 @@ export default class GoldenMineGame {
             }
 
             if ((mine.state === 'producing' || mine.state === 'resting') && mine.secondsRemaining > 0) {
-                mine.secondsRemaining = Math.max(0, mine.secondsRemaining - 1);
+                mine.secondsRemaining = Math.max(0, mine.secondsRemaining - deltaSeconds);
             }
         });
 
@@ -520,6 +543,9 @@ export default class GoldenMineGame {
                 truckTravel: this.TRUCK_TRAVEL_TIME
             };
         }
+
+        this.lastTimerUpdate = Date.now();
+        this.timerAccumulator = 0;
     }
 
     async buyMine(mineType) {
@@ -817,6 +843,11 @@ export default class GoldenMineGame {
     }
 
     showMessage(message, type = 'info') {
+        if (window.toastManager) {
+            window.toastManager.show(message, type);
+            return;
+        }
+
         const container = this.gameContainer;
         if (!container) return;
 

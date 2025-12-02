@@ -174,8 +174,6 @@ function createDefaultFishesProgress() {
 }
 
 const platformStatsSchema = new mongoose.Schema({
-  totalPlayTime: { type: Number, default: 0 },
-  gamesPlayed: { type: Number, default: 1 },
   totalEarnings: { type: Number, default: 0 },
   lastLogin: { type: Date, default: Date.now },
   achievements: { type: [String], default: [] }
@@ -184,7 +182,6 @@ const platformStatsSchema = new mongoose.Schema({
 const gameProgressSchema = new mongoose.Schema({
   unlocked: { type: Boolean, default: false },
   lastPlayed: { type: Date, default: Date.now },
-  totalPlayTime: { type: Number, default: 0 },
   highScore: { type: Number, default: 0 },
   completed: { type: Boolean, default: false }
 }, { _id: false });

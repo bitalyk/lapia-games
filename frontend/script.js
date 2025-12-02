@@ -30,46 +30,51 @@ function logout() {
   }
 }
 
-// Toast функция (оставляем для совместимости)
-function showToast(message, type = "info", duration = 3000) {
-  let container = document.getElementById("toast-container");
-  if (!container) {
-    container = document.createElement("div");
-    container.id = "toast-container";
-    document.body.appendChild(container);
-  }
+if (!window.showToast) {
+  window.showToast = function fallbackToast(message, type = "info", duration = 3000) {
+    let container = document.getElementById("toast-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "toast-container";
+      document.body.appendChild(container);
+    }
 
-  const el = document.createElement("div");
-  el.className = `toast ${type}`;
-  el.textContent = message;
-  container.appendChild(el);
+    const el = document.createElement("div");
+    el.className = `toast toast--${type}`;
+    el.textContent = message;
+    container.appendChild(el);
 
-  // Force reflow then show
-  el.offsetHeight;
-  el.classList.add("show");
+    requestAnimationFrame(() => {
+      el.classList.add("toast--visible");
+    });
 
-  const hideTimeout = setTimeout(() => {
-    el.classList.remove("show");
-    el.classList.add("hide");
-    setTimeout(() => {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    }, 420);
-  }, duration);
+    const hideTimeout = setTimeout(() => {
+      el.classList.remove("toast--visible");
+      el.classList.add("toast--hiding");
+      setTimeout(() => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 280);
+    }, duration);
 
-  el.addEventListener("click", () => {
-    clearTimeout(hideTimeout);
-    el.classList.remove("show");
-    el.classList.add("hide");
-    setTimeout(() => {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    }, 220);
-  });
+    el.addEventListener("click", () => {
+      clearTimeout(hideTimeout);
+      el.classList.remove("toast--visible");
+      el.classList.add("toast--hiding");
+      setTimeout(() => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 180);
+    });
+  };
 }
 
 // Совместимость со старой системой
 if (!window.__native_alert__) window.__native_alert__ = window.alert.bind(window);
 window.alert = function (msg) {
-  showToast(String(msg), "info", 3000);
+  if (window.toastManager) {
+    window.toastManager.show(String(msg), "info", { duration: 3000 });
+  } else {
+    window.showToast(String(msg), "info", 3000);
+  }
 };
 
 // Привязка событий после загрузки DOM
@@ -98,7 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         if (result.success) {
           showAuthMessage("Registration successful! Welcome to Lapia Games!", "success");
-          showToast("🎉 Welcome to Lapia Games Platform!", "success");
+          window.toastManager?.show("🎉 Welcome to Lapia Games Platform!", "success");
         } else {
           showAuthMessage(result.error || "Registration failed", "error");
         }
@@ -126,7 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         if (result.success) {
           showAuthMessage("Login successful!", "success");
-          showToast(`Welcome back, ${username}!`, "success");
+          window.toastManager?.show(`Welcome back, ${username}!`, "success");
         } else {
           showAuthMessage(result.error || "Login failed", "error");
         }

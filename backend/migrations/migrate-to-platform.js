@@ -16,8 +16,6 @@ async function migrateToPlatform() {
       // Инициализируем платформенные поля если их нет
       if (!user.platformStats) {
         user.platformStats = {
-          totalPlayTime: 0,
-          gamesPlayed: 1,
           totalEarnings: user.coins || 0,
           lastLogin: user.updatedAt,
           achievements: []
@@ -36,7 +34,6 @@ async function migrateToPlatform() {
           ['happy-birds', { 
             unlocked: true, 
             lastPlayed: user.updatedAt,
-            totalPlayTime: 0,
             highScore: user.coins || 0
           }]
         ]);

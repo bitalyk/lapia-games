@@ -1,6 +1,6 @@
 # lapia-games
 
-A multi-game idle/clicker platform featuring Happy Birds (egg production) and Rich Garden (tree farming) games.
+A multi-game idle/clicker platform featuring Happy Birds, Rich Garden, Golden Mine, Cat Chess, and Fishes.
 
 Keep guidance short and actionable so an AI agent can be productive quickly.
 
@@ -12,7 +12,7 @@ Keep guidance short and actionable so an AI agent can be productive quickly.
 - **Games**: Two idle games with truck delivery systems, redeem codes, and persistent progress.
 
 ## Key Conventions & Patterns
-- **Bird/Egg Configuration**: The `BIRDS` object defines bird types and production rules. Duplicated in `backend/routes/game.js` and `frontend/games/happy-birds/game.js`.
+- **Bird/Egg Configuration**: The `BIRDS` object defines bird types and production rules. Duplicated in `backend/routes/happy-birds.js` and `frontend/games/happy-birds/game.js`.
 - **Tree/Fruit Configuration**: The `TREE_TYPES` object defines tree types and production rules. Duplicated in `backend/routes/rich-garden.js` and `frontend/games/rich-garden/game.js`.
 - **Time Windows**: Happy Birds caps at 6 hours, Rich Garden trees at 4 hours production + 30 minutes collection.
 - **User Identification**: Username is primary identifier. Most endpoints accept `{ username }` in request body or path.
@@ -20,6 +20,12 @@ Keep guidance short and actionable so an AI agent can be productive quickly.
 - **Truck System**: Both games use 1-hour travel between farm and city. Production continues during travel.
 - **Progress Saving**: Server auto-saves progress every 30 seconds with data validation.
 - **Game Features**: Redeem codes (configurable via `ENABLE_REDEEM`), truck logistics, timer UI, inventory system.
+
+## Latest Updates
+- **Unified Toasts**: `frontend/js/toast-manager.js` powers consistent toast styling across the platform, games, and menus.
+- **Smooth Login Reveal**: UI remains hidden behind the background gradient until authentication checks finish to prevent flicker.
+- **Golden Mine Offline Cycle**: `backend/routes/golden-mine.js` now advances production/rest cycles on the server, even when the client is closed.
+- **Accurate Last Played**: `frontend/js/game-manager.js` records launches and syncs through `AuthManager` so menu indicators stay current for every game.
 
 ## API Surface (Examples)
 
@@ -90,7 +96,19 @@ frontend/
 │   │   ├── game.js       # Game logic
 │   │   ├── index.html    # Game page
 │   │   └── style.css     # Game styles
-│   └── rich-garden/      # Rich Garden game
+│   ├── rich-garden/      # Rich Garden game
+│   │   ├── game.js       # Game logic
+│   │   ├── index.html    # Game page
+│   │   └── style.css     # Game styles
+│   ├── golden-mine/      # Golden Mine game
+│   │   ├── game.js       # Game logic
+│   │   ├── index.html    # Game page
+│   │   └── style.css     # Game styles
+│   ├── cat-chess/        # Cat Chess game
+│   │   ├── game.js       # Game logic
+│   │   ├── index.html    # Game page
+│   │   └── style.css     # Game styles
+│   └── fishes/           # Fishes game
 │       ├── game.js       # Game logic
 │       ├── index.html    # Game page
 │       └── style.css     # Game styles
@@ -109,7 +127,7 @@ frontend/
 - **Production Continuity**: Background saves every 30 seconds; production continues during truck travel
 
 ## Where to Look for Examples
-- `backend/routes/game.js` — Happy Birds API logic and constants
+- `backend/routes/happy-birds.js` — Happy Birds API logic and constants
 - `backend/routes/rich-garden.js` — Rich Garden API logic and tree configurations
 - `backend/models/user.js` — Database schemas and data structures
 - `frontend/games/happy-birds/game.js` — Client-side Happy Birds mechanics

@@ -15,6 +15,7 @@ Welcome to the `lapia-games` repository! This document provides essential guidan
 - **Bird/Egg Configuration**: The `BIRDS` object defines bird types and production rules. It is duplicated in `backend/routes/happy-birds.js` and `frontend/games/happy-birds/game.js`. Keep these in sync.
 - **Tree/Fruit Configuration**: The `TREE_TYPES` object defines tree types and production rules. It is duplicated in `backend/routes/rich-garden.js` and `frontend/games/rich-garden/game.js`. Keep these in sync.
 - **Time Window**: Production is capped at 6 hours (`SIX_HOURS_SEC`) for Happy Birds, 4 hours for Rich Garden trees.
+- **Toast Notifications**: Use the shared `toastManager` in `frontend/js/toast-manager.js` (and `window.showToast`) for all user-facing notifications across the platform. Avoid bespoke per-game toast implementations unless the manager is explicitly unavailable.
 - **User Identification**: The `username` field is the primary identifier. Most endpoints expect `{ username }` in the request body or path.
 - **Password Security**: Passwords are hashed with `bcrypt` and stored as `passwordHash`.
 - **Truck System**: For both games, goods must be loaded into truck at farm, truck travels to city (1 hour), goods sold at city for coins, purchases made only at city, truck returns to farm (1 hour). Production continues during travel.
@@ -59,6 +60,7 @@ Welcome to the `lapia-games` repository! This document provides essential guidan
 - **ESM**: The project uses ES modules (`"type": "module"` in `package.json`). Use `import/export` syntax.
 - **Static Frontend**: The frontend is a static SPA. Game-specific logic in `frontend/games/[game-name]/game.js`, styles in `style.css`, HTML in `index.html`.
 - **User Model**: Extended with `productionStart`, `lastSaveTime`, `savedProduced`, `redeemedCodes`, `platformStats`, `platformCurrencies`, `gamesProgress`, `richGardenProgress`, `inventory`, `settings`.
+- **Login Reveal**: The body starts with the `app-loading` class to hide UI until `AuthManager` finishes session validation. Keep new UI components compatible with that flow.
 
 ## Integration Points
 - **MongoDB**: Ensure the database is running and accessible. Use the `MONGO_URI` environment variable to override the default URI.
@@ -70,6 +72,7 @@ Welcome to the `lapia-games` repository! This document provides essential guidan
 - **Syncing `TREE_TYPES`**: Always update both `backend/routes/rich-garden.js` and `frontend/games/rich-garden/game.js` when modifying tree configurations.
 - **Data Shape Assumptions**: Ensure `birds`, `eggs`, and `savedProduced` objects include all expected keys (e.g., `red`, `blue`). Validation resets corrupted data to empty objects.
 - **Time Logic**: Production starts on first bird purchase. Background saves prevent data loss but may cause UI jumps; client-side calculation handles real-time updates.
+- **Golden Mine Timing**: Backend `backend/routes/golden-mine.js` now advances mines through rest/production cycles server-side. When adjusting timers, update both constants and the `advanceMineState` helper so offline progress stays accurate.
 - **Data Corruption**: Routes and background saver include checks for corrupted objects; auto-reset to prevent Mongoose errors.
 - **Game Separation**: Each game (e.g., happy-birds, rich-garden) has its own directory with game.js, index.html, style.css for modularity.
 

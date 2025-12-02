@@ -7,9 +7,16 @@ export class AuthManager {
     }
 
     async init() {
-        await this.checkExistingSession();
-        this.bindAuthEvents();
-        this.registerGlobalFunctions();
+        try {
+            await this.checkExistingSession();
+        } catch (error) {
+            console.error('Failed to initialize auth manager:', error);
+        } finally {
+            this.bindAuthEvents();
+            this.registerGlobalFunctions();
+            this.updateAuthUI();
+            this.revealUI();
+        }
     }
 
     // ✅ ДОБАВЛЯЕМ: Метод проверки аутентификации
@@ -23,6 +30,7 @@ export class AuthManager {
         
         // Обновляем UI
         this.updateAuthUI();
+        this.revealUI();
         
         // Загружаем валюты пользователя
         this.initializeUserCurrencies(userData.username);
@@ -40,6 +48,7 @@ export class AuthManager {
     onLogout() {
         console.log('✅ Logout completed');
         this.updateAuthUI();
+        this.revealUI();
         
         window.dispatchEvent(new CustomEvent('platformLogout'));
     }
@@ -63,9 +72,26 @@ export class AuthManager {
         }
     }
 
+    revealUI() {
+        const body = document.body;
+        if (body?.classList.contains('app-loading')) {
+            body.classList.remove('app-loading');
+        }
+    }
+
+    cachePlatformProfile(profile) {
+        if (!profile?.username) return;
+        const normalized = { ...profile };
+        normalized.gamesProgress = this.normalizeGamesProgressData(profile.gamesProgress);
+        localStorage.setItem(`platform_profile_${profile.username}`, JSON.stringify(normalized));
+    }
+
     // ✅ ДОБАВЛЯЕМ: Создание профиля пользователя
     async createUserProfile(userProfile) {
-        localStorage.setItem(`platform_profile_${userProfile.username}`, JSON.stringify(userProfile));
+        if (!userProfile.gamesProgress) {
+            userProfile.gamesProgress = {};
+        }
+        this.cachePlatformProfile(userProfile);
         
         // Инициализируем базовые валюты
         const initialCurrencies = {
@@ -80,27 +106,134 @@ export class AuthManager {
     }
 
     // ✅ ДОБАВЛЯЕМ: Загрузка профиля пользователя
-    async loadUserProfile(username) {
+    getCachedProfile(username) {
+        if (!username) return null;
         const saved = localStorage.getItem(`platform_profile_${username}`);
-        if (saved) {
-            return JSON.parse(saved);
-        } else {
-            // Создаем базовый профиль если не существует
-            const basicProfile = {
-                username: username,
-                registeredAt: new Date().toISOString(),
-                games: {
-                    'happy-birds': { unlocked: true, progress: {} },
-                    'fishes': { unlocked: true, progress: {} }
-                },
-                platformStats: {
-                    totalPlayTime: 0,
-                    gamesPlayed: 1,
-                    achievements: []
-                }
-            };
-            return await this.createUserProfile(basicProfile);
+        if (!saved) return null;
+        try {
+            const parsed = JSON.parse(saved);
+            parsed.gamesProgress = this.normalizeGamesProgressData(parsed.gamesProgress);
+            return parsed;
+        } catch (error) {
+            console.warn('Failed to parse cached profile, clearing it...', error);
+            localStorage.removeItem(`platform_profile_${username}`);
+            return null;
         }
+    }
+
+    normalizeGamesProgressData(progress) {
+        if (!progress) return {};
+        if (progress instanceof Map) {
+            return Object.fromEntries(progress);
+        }
+        if (typeof progress === 'object') {
+            return { ...progress };
+        }
+        return {};
+    }
+
+    mergeProgressMaps(remoteProgress = {}, localProgress = {}) {
+        const remote = this.normalizeGamesProgressData(remoteProgress);
+        const local = this.normalizeGamesProgressData(localProgress);
+        const merged = { ...remote };
+
+        Object.entries(local).forEach(([gameId, localEntry]) => {
+            const safeLocal = (localEntry && typeof localEntry === 'object') ? localEntry : {};
+            const remoteEntry = (remote[gameId] && typeof remote[gameId] === 'object') ? remote[gameId] : {};
+            const combined = { ...safeLocal, ...remoteEntry };
+
+            const localDate = safeLocal?.lastPlayed ? new Date(safeLocal.lastPlayed) : null;
+            const remoteDate = remoteEntry?.lastPlayed ? new Date(remoteEntry.lastPlayed) : null;
+
+            if (localDate && remoteDate) {
+                combined.lastPlayed = remoteDate > localDate ? remoteEntry.lastPlayed : safeLocal.lastPlayed;
+            } else {
+                combined.lastPlayed = remoteEntry.lastPlayed || safeLocal.lastPlayed;
+            }
+
+            merged[gameId] = combined;
+        });
+
+        return merged;
+    }
+
+    async fetchPlatformProfile(username) {
+        if (!username) return null;
+
+        const endpoints = [
+            `${this.API_BASE}/users/platform-data/${username}`,
+            `${this.API_BASE}/platform/profile/${username}`
+        ];
+
+        for (const url of endpoints) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    continue;
+                }
+
+                const data = await response.json();
+                if (!data?.success) {
+                    continue;
+                }
+
+                const profile = data.platformData || data.profile;
+                if (!profile) {
+                    continue;
+                }
+
+                profile.gamesProgress = this.normalizeGamesProgressData(profile.gamesProgress);
+                return profile;
+            } catch (error) {
+                console.warn(`Failed to fetch platform profile from ${url}:`, error);
+            }
+        }
+
+        return null;
+    }
+
+    async resolveCurrentUserProfile(username) {
+        const remoteProfile = await this.fetchPlatformProfile(username);
+        if (remoteProfile) {
+            const cached = this.getCachedProfile(username) || {};
+            const mergedProfile = { ...cached, ...remoteProfile };
+            mergedProfile.gamesProgress = this.mergeProgressMaps(remoteProfile.gamesProgress, cached.gamesProgress);
+            mergedProfile.username = remoteProfile.username || cached.username || username;
+            mergedProfile.gamesProgress = this.normalizeGamesProgressData(mergedProfile.gamesProgress);
+            this.cachePlatformProfile(mergedProfile);
+            return mergedProfile;
+        }
+
+        const localProfile = await this.loadUserProfile(username);
+        if (!localProfile.username) {
+            localProfile.username = username;
+        }
+        localProfile.gamesProgress = this.normalizeGamesProgressData(localProfile.gamesProgress);
+        this.cachePlatformProfile(localProfile);
+        return localProfile;
+    }
+
+    async loadUserProfile(username) {
+        const cached = this.getCachedProfile(username);
+        if (cached) {
+            this.cachePlatformProfile(cached);
+            return cached;
+        }
+
+        // Создаем базовый профиль если не существует
+        const basicProfile = {
+            username: username,
+            registeredAt: new Date().toISOString(),
+            games: {
+                'happy-birds': { unlocked: true, progress: {} },
+                'fishes': { unlocked: true, progress: {} }
+            },
+            platformStats: {
+                achievements: []
+            },
+            gamesProgress: {}
+        };
+        return await this.createUserProfile(basicProfile);
     }
 
     // ✅ ДОБАВЛЯЕМ: Инициализация валют для пользователя
@@ -133,17 +266,17 @@ export class AuthManager {
 
     // ✅ ДОБАВЛЯЕМ: Сохранение прогресса
     saveProgress() {
-        if (this.currentUser && window.currencyManager) {
+        if (!this.currentUser) {
+            return;
+        }
+
+        this.cachePlatformProfile(this.currentUser);
+
+        if (window.currencyManager) {
             // Сохраняем балансы валют
             localStorage.setItem(
                 `currency_balances_${this.currentUser.username}`, 
                 JSON.stringify(window.currencyManager.currencies)
-            );
-            
-            // Сохраняем профиль
-            localStorage.setItem(
-                `platform_profile_${this.currentUser.username}`,
-                JSON.stringify(this.currentUser)
             );
         }
     }
@@ -196,7 +329,12 @@ export class AuthManager {
     // ✅ ОБНОВЛЕННЫЙ: Валидация сессии на сервере
     async validateSession(userData) {
         try {
-            const response = await fetch(`${this.API_BASE}/users/profile/${userData.username}`);
+            const username = userData?.username;
+            if (!username) {
+                return false;
+            }
+
+            const response = await fetch(`${this.API_BASE}/users/profile/${username}`);
             
             if (response.status === 404) {
                 console.log('User not found on server');
@@ -210,9 +348,15 @@ export class AuthManager {
             const data = await response.json();
             
             if (data.success) {
-                this.currentUser = data.user;
+                const profile = await this.resolveCurrentUserProfile(username);
+                if (!profile) {
+                    throw new Error('Failed to resolve user profile');
+                }
+
+                this.currentUser = profile;
                 this.isLoggedIn = true;
-                this.onLoginSuccess(data.user);
+                this.saveSession(profile);
+                this.onLoginSuccess(profile);
                 return true;
             } else {
                 throw new Error('Invalid response format');
@@ -223,12 +367,15 @@ export class AuthManager {
             // ✅ Fallback: проверяем через game status если profile endpoint не работает
             try {
                 console.log('🔄 Trying fallback validation...');
-                const fallbackResponse = await fetch(`${this.API_BASE}/game/status/${userData.username}`);
-                if (fallbackResponse.ok) {
-                    const fallbackData = await fallbackResponse.json();
-                    this.currentUser = { username: userData.username };
+                const username = userData?.username;
+                const fallbackResponse = username ? await fetch(`${this.API_BASE}/game/status/${username}`) : null;
+                if (fallbackResponse?.ok) {
+                    await fallbackResponse.json();
+                    const profile = await this.loadUserProfile(username);
+                    this.currentUser = profile;
                     this.isLoggedIn = true;
-                    this.onLoginSuccess({ username: userData.username });
+                    this.saveSession(profile);
+                    this.onLoginSuccess(profile);
                     return true;
                 }
             } catch (fallbackError) {
@@ -269,8 +416,6 @@ export class AuthManager {
                         'happy-birds': { unlocked: true, progress: {} }
                     },
                     platformStats: {
-                        totalPlayTime: 0,
-                        gamesPlayed: 1,
                         achievements: []
                     }
                 };
@@ -314,7 +459,7 @@ export class AuthManager {
 
             if (data.success) {
                 // Загружаем профиль платформы
-                const userProfile = await this.loadUserProfile(username);
+                const userProfile = await this.resolveCurrentUserProfile(username);
                 
                 this.currentUser = userProfile;
                 this.isLoggedIn = true;
@@ -571,8 +716,6 @@ removeMenuEventListeners() {
         try {
             const usernameDisplay = document.getElementById('username-display');
             const platformTokens = document.getElementById('platform-tokens');
-            const totalGames = document.getElementById('total-games');
-            const playTime = document.getElementById('play-time');
             const hbLastPlayed = document.getElementById('hb-last-played');
             const rgLastPlayed = document.getElementById('rg-last-played');
             const gmLastPlayed = document.getElementById('gm-last-played');
@@ -588,16 +731,6 @@ removeMenuEventListeners() {
             if (platformTokens && window.currencyManager) {
                 const tokens = window.currencyManager.getBalance('platform');
                 platformTokens.textContent = `🪙 Platform Tokens: ${tokens}`;
-            }
-            
-            // Обновляем статистику игр
-            if (totalGames && this.currentUser?.platformStats) {
-                totalGames.textContent = `🎯 Games Played: ${this.currentUser.platformStats.gamesPlayed || 1}`;
-            }
-            
-            // Обновляем время игры
-            if (playTime && this.currentUser?.platformStats) {
-                playTime.textContent = `⏱️ Play Time: ${this.currentUser.platformStats.totalPlayTime || 0}m`;
             }
             
             // Обновляем последнюю игру Happy Birds
@@ -734,25 +867,54 @@ removeMenuEventListeners() {
     }
 
     // ✅ ДОБАВЛЯЕМ: Обновление прогресса игры
-    updateGameProgress(gameId, progress) {
-        if (this.currentUser) {
-            if (!this.currentUser.gamesProgress) {
-                this.currentUser.gamesProgress = {};
-            }
-            
-            if (!this.currentUser.gamesProgress[gameId]) {
-                this.currentUser.gamesProgress[gameId] = {};
-            }
-            
-            Object.assign(this.currentUser.gamesProgress[gameId], {
-                ...progress,
-                lastPlayed: new Date().toISOString()
+    updateGameProgress(gameId, progress = {}) {
+        if (!this.currentUser) {
+            return;
+        }
+
+        if (!this.currentUser.gamesProgress) {
+            this.currentUser.gamesProgress = {};
+        }
+
+        if (!this.currentUser.gamesProgress[gameId]) {
+            this.currentUser.gamesProgress[gameId] = {};
+        }
+
+        const existing = this.currentUser.gamesProgress[gameId];
+        const merged = { ...existing, ...progress };
+        const providedLastPlayed = progress.lastPlayed;
+        merged.lastPlayed = providedLastPlayed || merged.lastPlayed || new Date().toISOString();
+
+        this.currentUser.gamesProgress[gameId] = merged;
+        this.saveProgress();
+
+        this.syncGameProgressWithServer(gameId, merged).catch((error) => {
+            console.warn('Failed to sync game progress', error);
+        });
+
+        this.updateMenuUserInfo();
+    }
+
+    async syncGameProgressWithServer(gameId, progress) {
+        if (!this.currentUser?.username) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.API_BASE}/platform/game-progress`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: this.currentUser.username,
+                    gameId,
+                    progress
+                })
             });
-            
-            this.saveProgress();
-            
-            // Обновляем UI если меню активно
-            this.updateMenuUserInfo();
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            throw error;
         }
     }
 
@@ -813,26 +975,6 @@ removeMenuEventListeners() {
         }
     }
 
-    // ✅ ДОБАВЛЯЕМ: Обновление времени игры
-    addPlayTime(minutes, gameId = null) {
-        if (this.currentUser) {
-            // Обновляем общее время
-            this.updatePlatformStats({
-                totalPlayTime: (this.currentUser.platformStats?.totalPlayTime || 0) + minutes
-            });
-            
-            // Обновляем время конкретной игры
-            if (gameId) {
-                const currentTime = this.currentUser.gamesProgress?.[gameId]?.totalPlayTime || 0;
-                this.updateGameProgress(gameId, {
-                    totalPlayTime: currentTime + minutes
-                });
-            }
-            
-            console.log(`⏱️ Added ${minutes} minutes play time${gameId ? ` for ${gameId}` : ''}`);
-        }
-    }
-
     // ✅ ДОБАВЛЯЕМ: Получение баланса валюты
     getCurrencyBalance(currencyType) {
         if (window.currencyManager) {
@@ -875,8 +1017,6 @@ removeMenuEventListeners() {
                     'happy-birds': { unlocked: true, progress: {} }
                 },
                 platformStats: {
-                    totalPlayTime: 0,
-                    gamesPlayed: 1,
                     achievements: []
                 }
             });

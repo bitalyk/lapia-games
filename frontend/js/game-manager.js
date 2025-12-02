@@ -1,6 +1,7 @@
 class GameManager {
     constructor() {
         this.currentGame = null;
+        this.lastRequestedGameId = null;
         this.availableGames = {
             'happy-birds': {
                 name: 'Happy Birds',
@@ -44,8 +45,10 @@ class GameManager {
         console.log(`🔄 Launching game: ${gameId}`);
         
         this.showGameArea();
+        this.lastRequestedGameId = gameId;
         
         try {
+            let started = false;
             if (gameId === 'happy-birds') {
                 const { default: HappyBirdsGame } = await import('../games/happy-birds/game.js');
                 this.currentGame = new HappyBirdsGame();
@@ -54,6 +57,7 @@ class GameManager {
                 this.currentGame.setGameManager(this);
                 
                 await this.currentGame.start();
+                started = true;
             } else if (gameId === 'rich-garden') {
                 const { default: RichGardenGame } = await import('../games/rich-garden/game.js');
                 this.currentGame = new RichGardenGame();
@@ -62,6 +66,7 @@ class GameManager {
                 this.currentGame.setGameManager(this);
                 
                 await this.currentGame.start();
+                started = true;
             } else if (gameId === 'golden-mine') {
                 const { default: GoldenMineGame } = await import('../games/golden-mine/game.js');
                 this.currentGame = new GoldenMineGame();
@@ -70,6 +75,7 @@ class GameManager {
                 this.currentGame.setGameManager(this);
                 
                 await this.currentGame.start();
+                started = true;
             } else if (gameId === 'cat-chess') {
                 const { default: CatChessGame } = await import('../games/cat-chess/game.js');
                 this.currentGame = new CatChessGame();
@@ -78,6 +84,7 @@ class GameManager {
                 this.currentGame.setGameManager(this);
                 
                 await this.currentGame.start();
+                started = true;
             } else if (gameId === 'fishes') {
                 const { default: FishesGame } = await import('../games/fishes/game.js');
                 this.currentGame = new FishesGame();
@@ -85,12 +92,18 @@ class GameManager {
                 this.currentGame.setGameManager(this);
 
                 await this.currentGame.start();
+                started = true;
             } else {
                 this.showError('Game not available yet');
+                return;
+            }
+
+            if (started) {
+                this.recordGameLaunch(gameId);
             }
         } catch (error) {
             console.error('❌ Game launch failed:', error);
-            await this.launchHappyBirdsFallback();
+            this.showGameLoadError(error);
         }
     }
 
@@ -137,6 +150,7 @@ class GameManager {
             gameArea.style.display = 'none';
             gameArea.innerHTML = '';
         }
+
         if (gameMenu) gameMenu.style.display = 'block';
         
         console.log('🏠 Menu shown');
@@ -155,57 +169,61 @@ class GameManager {
         console.log('🔄 Menu updated after game session');
     }
 
-    // ✅ Fallback для Happy Birds
-    async launchHappyBirdsFallback() {
+    // ✅ Общий fallback-экран, если игра не загрузилась
+    showGameLoadError(error) {
         const gameArea = document.getElementById('game-area');
         if (!gameArea) return;
 
+        this.currentGame = null;
+
+        const requestedGame = this.lastRequestedGameId && this.availableGames[this.lastRequestedGameId]
+            ? this.availableGames[this.lastRequestedGameId].name
+            : 'this game';
+
         gameArea.innerHTML = `
-            <div style="padding: 20px;">
-                <h2>🐦 Happy Birds (Simple Version)</h2>
-                <button onclick="window.returnToGameMenu()" style="margin-bottom: 20px; padding: 10px 20px;">
-                    ← Back to Menu
-                </button>
-                <div style="text-align: center; padding: 40px;">
-                    <h3>Simple Happy Birds Game</h3>
-                    <p>This is a fallback version of the game.</p>
-                    <button onclick="this.simpleCollect()" style="padding: 15px 30px; font-size: 18px; margin: 10px;">
-                        🥚 Collect Eggs
-                    </button>
-                    <div id="simple-stats" style="margin: 20px 0;">
-                        <p>Coins: <span id="simple-coins">0</span></p>
-                        <p>Eggs: <span id="simple-eggs">0</span></p>
+            <div style="min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 48px;">
+                <div style="max-width: 520px; width: 100%; background: rgba(0, 0, 0, 0.35); border-radius: 16px; padding: 36px; text-align: center; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);">
+                    <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                    <h2 style="margin-bottom: 12px;">Game Failed to Load</h2>
+                    <p style="margin-bottom: 24px; line-height: 1.5;">
+                        We couldn't start <strong>${requestedGame}</strong>. This usually happens when the game files are missing or the connection was interrupted.
+                    </p>
+                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                        <button data-action="retry-game" style="padding: 12px 24px; border-radius: 999px; border: none; background: #4b8df8; color: #fff; font-size: 16px; cursor: pointer;">
+                            🔄 Try Again
+                        </button>
+                        <button data-action="back-to-menu" style="padding: 12px 24px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.2); background: transparent; color: #fff; font-size: 16px; cursor: pointer;">
+                            ← Back to Menu
+                        </button>
                     </div>
                 </div>
             </div>
         `;
 
-        // Простая логика для fallback версии
-        window.simpleCollect = () => {
-            const coinsEl = document.getElementById('simple-coins');
-            const eggsEl = document.getElementById('simple-eggs');
-            if (coinsEl && eggsEl) {
-                let coins = parseInt(coinsEl.textContent) || 0;
-                let eggs = parseInt(eggsEl.textContent) || 0;
-                
-                eggs += 5;
-                if (eggs >= 10) {
-                    coins += 1;
-                    eggs = 0;
+        if (error && this.consoleMessages) {
+            console.error('Game load error details:', error);
+        }
+
+        const retryButton = gameArea.querySelector('[data-action="retry-game"]');
+        if (retryButton) {
+            retryButton.addEventListener('click', () => {
+                if (this.lastRequestedGameId) {
+                    this.launchGame(this.lastRequestedGameId);
+                } else {
+                    this.showMenu();
                 }
-                
-                coinsEl.textContent = coins;
-                eggsEl.textContent = eggs;
-                
-                if (window.currencyManager) {
-                    window.currencyManager.updateBalance('happy-birds', coins);
-                }
-            }
-        };
+            });
+        }
+
+        const backButton = gameArea.querySelector('[data-action="back-to-menu"]');
+        if (backButton) {
+            backButton.addEventListener('click', () => this.returnToMenu());
+        }
     }
 
     // ✅ Показать ошибку
     showError(message) {
+        window.toastManager?.show(message, 'error');
         const gameArea = document.getElementById('game-area');
         if (gameArea) {
             gameArea.innerHTML = `
@@ -245,6 +263,13 @@ class GameManager {
     // ✅ Получить список доступных игр
     getAvailableGames() {
         return this.availableGames;
+    }
+
+    recordGameLaunch(gameId) {
+        if (!gameId) return;
+        if (window.authManager?.updateGameProgress) {
+            window.authManager.updateGameProgress(gameId, {});
+        }
     }
 }
 

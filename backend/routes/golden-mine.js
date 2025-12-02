@@ -28,6 +28,64 @@ function calculateWorkerCost(mineType, workerNumber) {
     return Math.floor(baseCost * multiplier);
 }
 
+function advanceMineState(mine, now) {
+    if (!mine) return false;
+
+    const lastStateChange = mine.lastStateChange ? new Date(mine.lastStateChange) : now;
+    let elapsed = Math.floor((now - lastStateChange) / 1000);
+    if (elapsed <= 0) {
+        return false;
+    }
+
+    let remainder = elapsed;
+    let changed = false;
+
+    while (remainder > 0) {
+        if (mine.state === 'producing') {
+            if (mine.timeLeft <= 0) {
+                mine.timeLeft = PRODUCTION_TIME;
+            }
+
+            if (remainder >= mine.timeLeft) {
+                remainder -= mine.timeLeft;
+                mine.state = 'ready';
+                mine.timeLeft = 0;
+                mine.oreProduced = mine.workers * MINE_TYPES[mine.type].orePerSecond * PRODUCTION_TIME;
+                changed = true;
+                break; // Ready state waits for player action
+            }
+
+            mine.timeLeft -= remainder;
+            remainder = 0;
+            changed = true;
+        } else if (mine.state === 'resting') {
+            if (mine.timeLeft <= 0) {
+                mine.timeLeft = REST_TIME;
+            }
+
+            if (remainder >= mine.timeLeft) {
+                remainder -= mine.timeLeft;
+                mine.state = 'producing';
+                mine.timeLeft = PRODUCTION_TIME;
+                mine.oreProduced = 0;
+                changed = true;
+                continue;
+            }
+
+            mine.timeLeft -= remainder;
+            remainder = 0;
+            changed = true;
+        } else {
+            break;
+        }
+    }
+
+    remainder = Math.max(0, remainder);
+    mine.lastStateChange = new Date(now.getTime() - remainder * 1000);
+
+    return changed;
+}
+
 // Get Golden Mine status
 router.get('/status/:username', async (req, res) => {
     try {
@@ -71,42 +129,20 @@ router.get('/status/:username', async (req, res) => {
         const now = new Date();
         let needsSave = false;
 
-        user.goldenMineProgress.mines.forEach((mine, index) => {
+        user.goldenMineProgress.mines.forEach((mine) => {
             if (!mine) return;
 
-            // Normalize timeLeft values that exceed current constants (for testing/production time changes)
             if (mine.state === 'producing' && mine.timeLeft > PRODUCTION_TIME) {
                 mine.timeLeft = PRODUCTION_TIME;
                 needsSave = true;
-            } else if (mine.state === 'resting' && mine.timeLeft > REST_TIME) {
+            }
+
+            if (mine.state === 'resting' && mine.timeLeft > REST_TIME) {
                 mine.timeLeft = REST_TIME;
                 needsSave = true;
             }
 
-            const timePassed = Math.floor((now - mine.lastStateChange) / 1000);
-
-            if (mine.state === 'producing' && timePassed >= mine.timeLeft) {
-                // Production finished, move to ready
-                mine.state = 'ready';
-                mine.oreProduced = mine.workers * MINE_TYPES[mine.type].orePerSecond * PRODUCTION_TIME;
-                mine.timeLeft = 0;
-                mine.lastStateChange = now;
-                needsSave = true;
-            } else if (mine.state === 'producing') {
-                mine.timeLeft -= timePassed;
-                mine.lastStateChange = now;
-                needsSave = true;
-            } else if (mine.state === 'ready' && timePassed >= 0) {
-                // Ready state, no change needed
-            } else if (mine.state === 'resting' && timePassed >= mine.timeLeft) {
-                // Rest finished, back to producing
-                mine.state = 'producing';
-                mine.timeLeft = PRODUCTION_TIME;
-                mine.lastStateChange = now;
-                needsSave = true;
-            } else if (mine.state === 'resting') {
-                mine.timeLeft -= timePassed;
-                mine.lastStateChange = now;
+            if (advanceMineState(mine, now)) {
                 needsSave = true;
             }
         });
@@ -321,10 +357,11 @@ router.post('/collect_ore', async (req, res) => {
             return res.status(400).json({ error: 'Mine is not ready for collection' });
         }
 
-        // Add ore to inventory
         const oreType = mine.type;
-        user.goldenMineProgress.inventory[oreType] = (parseInt(user.goldenMineProgress.inventory[oreType] || 0)) + parseInt(mine.oreProduced);
-        user.goldenMineProgress.totalOreMined += mine.oreProduced;
+        const collectedAmount = parseInt(mine.oreProduced, 10) || 0;
+
+        user.goldenMineProgress.inventory[oreType] = (parseInt(user.goldenMineProgress.inventory[oreType] || 0)) + collectedAmount;
+        user.goldenMineProgress.totalOreMined += collectedAmount;
 
         // Reset mine to resting
         mine.state = 'resting';
@@ -336,7 +373,7 @@ router.post('/collect_ore', async (req, res) => {
 
         res.json({
             success: true,
-            collected: mine.oreProduced,
+            collected: collectedAmount,
             newInventory: user.goldenMineProgress.inventory
         });
 

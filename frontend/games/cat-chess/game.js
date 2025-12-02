@@ -2585,11 +2585,16 @@ export default class CatChessGame {
 
     // Show game message
     showGameMessage(message, type = 'info') {
+        if (window.toastManager) {
+            window.toastManager.show(message, type);
+            return;
+        }
+
         const container = this.ensureToastContainer();
         if (!container) return;
 
         const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
+        toast.className = `toast toast--${type}`;
         toast.textContent = message;
         container.appendChild(toast);
 

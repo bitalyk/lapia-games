@@ -1009,86 +1009,11 @@ export default class HappyBirdsGame {
 
     // Show game message
     showGameMessage(message, type = 'info') {
-        // Remove any existing message
-        const existingMessage = document.getElementById('hb-toast-message');
-        if (existingMessage) {
-            existingMessage.remove();
+        if (window.toastManager) {
+            window.toastManager.show(message, type);
+        } else {
+            window.showToast?.(message, type, 4000);
         }
-
-        // Clear any existing timeout
-        if (this.messageTimeout) {
-            clearTimeout(this.messageTimeout);
-        }
-
-        // Create toast container if it doesn't exist
-        let toastContainer = document.getElementById('hb-toast-container');
-        if (!toastContainer) {
-            toastContainer = document.createElement('div');
-            toastContainer.id = 'hb-toast-container';
-            toastContainer.style.cssText = `
-                position: fixed;
-                top: 20px;
-                left: 50%;
-                transform: translateX(-50%);
-                z-index: 10000;
-                pointer-events: none;
-            `;
-            document.body.appendChild(toastContainer);
-        }
-
-        // Create message element
-        const messageEl = document.createElement('div');
-        messageEl.id = 'hb-toast-message';
-        messageEl.className = `message ${type}`;
-        messageEl.textContent = message;
-        messageEl.style.cssText = `
-            padding: 12px 20px;
-            border-radius: 6px;
-            margin: 8px 0;
-            font-weight: 500;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            border: 1px solid transparent;
-            transition: all 0.3s ease;
-            pointer-events: auto;
-            min-width: 300px;
-            text-align: center;
-        `;
-
-        // Set colors based on type
-        if (type === 'success') {
-            messageEl.style.background = '#d4edda';
-            messageEl.style.color = '#155724';
-            messageEl.style.borderColor = '#c3e6cb';
-        } else if (type === 'error') {
-            messageEl.style.background = '#f8d7da';
-            messageEl.style.color = '#721c24';
-            messageEl.style.borderColor = '#f5c6cb';
-        } else if (type === 'info') {
-            messageEl.style.background = '#d1ecf1';
-            messageEl.style.color = '#0c5460';
-            messageEl.style.borderColor = '#bee5eb';
-        }
-
-        toastContainer.appendChild(messageEl);
-
-        // Animation
-        messageEl.style.opacity = '0';
-        messageEl.style.transform = 'translateY(-20px)';
-        setTimeout(() => {
-            messageEl.style.opacity = '1';
-            messageEl.style.transform = 'translateY(0)';
-        }, 10);
-
-        // Clear message after 4 seconds
-        this.messageTimeout = setTimeout(() => {
-            messageEl.style.opacity = '0';
-            messageEl.style.transform = 'translateY(-20px)';
-            setTimeout(() => {
-                if (messageEl.parentNode) {
-                    messageEl.remove();
-                }
-            }, 300);
-        }, 4000);
 
         if (this.consoleMessages) console.log(`📢 Game message: ${message} (${type})`);
     }
@@ -1100,14 +1025,6 @@ export default class HappyBirdsGame {
         }
         if (this.statusRefreshInterval) {
             clearInterval(this.statusRefreshInterval);
-        }
-        if (this.messageTimeout) {
-            clearTimeout(this.messageTimeout);
-        }
-        // Remove toast container
-        const toastContainer = document.getElementById('hb-toast-container');
-        if (toastContainer) {
-            toastContainer.remove();
         }
         // Remove styles if needed
     }
