@@ -1,5 +1,6 @@
 // backend/models/user.js
 import mongoose from "../db.js";
+import AchievementManager from "../services/achievement-manager.js";
 
 const birdSchema = new mongoose.Schema({
   red: { type: Number, default: 0 },
@@ -173,6 +174,44 @@ function createDefaultFishesProgress() {
   };
 }
 
+const currencyByGameSchema = new mongoose.Schema({
+  happyBirds: { type: Number, default: 0 },
+  richGarden: { type: Number, default: 0 },
+  goldenMine: { type: Number, default: 0 },
+  catChess: { type: Number, default: 0 },
+  fishes: { type: Number, default: 0 }
+}, { _id: false });
+
+const activityStreakSchema = new mongoose.Schema({
+  currentStreak: { type: Number, default: 0 },
+  longestStreak: { type: Number, default: 0 },
+  lastActivityDate: { type: Date, default: null }
+}, { _id: false });
+
+const friendInviteSchema = new mongoose.Schema({
+  invitedCount: { type: Number, default: 0 },
+  invitedUsers: { type: [String], default: [] }
+}, { _id: false });
+
+const achievementHistorySchema = new mongoose.Schema({
+  key: { type: String, required: true },
+  reward: { type: Number, default: 0 },
+  unlockedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const achievementProgressSchema = new mongoose.Schema({
+  welcome: { type: Boolean, default: false },
+  firstThousand: { type: Boolean, default: false },
+  firstTenThousand: { type: Boolean, default: false },
+  firstHundredThousand: { type: Boolean, default: false },
+  firstMillion: { type: Boolean, default: false },
+  firstLpaPurchase: { type: Boolean, default: false },
+  weeklyDedication: { type: Boolean, default: false },
+  monthlyMaster: { type: Boolean, default: false },
+  yearlyLegend: { type: Boolean, default: false },
+  friendInviter: { type: Boolean, default: false }
+}, { _id: false });
+
 const platformStatsSchema = new mongoose.Schema({
   totalEarnings: { type: Number, default: 0 },
   lastLogin: { type: Date, default: Date.now },
@@ -238,6 +277,29 @@ const userSchema = new mongoose.Schema({
   platformCurrencies: { 
     type: platformCurrencySchema, 
     default: () => ({}) 
+  },
+
+  lpaBalance: { type: Number, default: 0 },
+  totalGameCurrency: { type: Number, default: 0 },
+  currencyByGame: {
+    type: currencyByGameSchema,
+    default: () => ({})
+  },
+  achievementProgress: {
+    type: achievementProgressSchema,
+    default: () => ({})
+  },
+  achievementHistory: {
+    type: [achievementHistorySchema],
+    default: () => []
+  },
+  activityStreak: {
+    type: activityStreakSchema,
+    default: () => ({})
+  },
+  friendInvites: {
+    type: friendInviteSchema,
+    default: () => ({})
   },
   
   gamesProgress: {
@@ -391,6 +453,11 @@ userSchema.methods.updateGameProgress = function(gameId, progress) {
   return this.save();
 };
 
+userSchema.methods.ensureAchievementState = function ensureAchievementState() {
+  AchievementManager.prepareUser(this);
+  return this;
+};
+
 // Статический метод для поиска по username
 userSchema.statics.findByUsername = function(username) {
   return this.findOne({ username: new RegExp(`^${username}$`, 'i') });
@@ -398,7 +465,13 @@ userSchema.statics.findByUsername = function(username) {
 
 // Удаляем дублирующиеся индексы перед созданием модели
 userSchema.pre('save', function(next) {
-  // Эта функция гарантирует, что индексы не дублируются
+  try {
+    AchievementManager.prepareUser(this);
+    AchievementManager.syncAllCurrency(this);
+    // Эта функция гарантирует, что индексы не дублируются
+  } catch (error) {
+    return next(error);
+  }
   next();
 });
 

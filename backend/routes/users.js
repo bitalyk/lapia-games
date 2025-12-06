@@ -25,7 +25,11 @@ router.get("/profile/:username", async (req, res) => {
         username: user.username,
         platformStats: user.platformStats,
         platformCurrencies: user.platformCurrencies,
-        lastActive: user.lastActive
+        lastActive: user.lastActive,
+        lpaBalance: user.lpaBalance,
+        achievementProgress: user.achievementProgress,
+        currencyByGame: user.currencyByGame,
+        activityStreak: user.activityStreak
       }
     });
   } catch (err) {
@@ -53,7 +57,11 @@ router.get("/platform-data/:username", async (req, res) => {
         gamesProgress: Object.fromEntries(user.gamesProgress || new Map()),
         inventory: user.inventory,
         settings: user.settings,
-        registeredAt: user.createdAt
+        registeredAt: user.createdAt,
+        lpaBalance: user.lpaBalance,
+        achievementProgress: user.achievementProgress,
+        currencyByGame: user.currencyByGame,
+        activityStreak: user.activityStreak
       }
     });
   } catch (err) {

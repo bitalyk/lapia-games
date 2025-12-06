@@ -21,6 +21,50 @@ async function migrateToPlatform() {
           achievements: []
         };
       }
+
+      if (typeof user.lpaBalance !== 'number') {
+        user.lpaBalance = 0;
+      }
+
+      if (!user.currencyByGame) {
+        user.currencyByGame = {
+          happyBirds: user.coins || 0,
+          richGarden: user.richGardenProgress?.coins || 0,
+          goldenMine: user.goldenMineProgress?.coins || 0,
+          catChess: user.catChessProgress?.coins || 0,
+          fishes: user.fishesProgress?.coins || 0
+        };
+      }
+
+      if (typeof user.totalGameCurrency !== 'number') {
+        user.totalGameCurrency = Object.values(user.currencyByGame || {}).reduce((sum, value) => sum + (value || 0), 0);
+      }
+
+      if (!user.achievementProgress) {
+        user.achievementProgress = {};
+      }
+      if (!user.achievementProgress.welcome) {
+        user.achievementProgress.welcome = true;
+      }
+
+      if (!Array.isArray(user.achievementHistory)) {
+        user.achievementHistory = [];
+      }
+
+      if (!user.activityStreak) {
+        user.activityStreak = {
+          currentStreak: 0,
+          longestStreak: 0,
+          lastActivityDate: null
+        };
+      }
+
+      if (!user.friendInvites) {
+        user.friendInvites = {
+          invitedCount: 0,
+          invitedUsers: []
+        };
+      }
       
       if (!user.platformCurrencies) {
         user.platformCurrencies = {

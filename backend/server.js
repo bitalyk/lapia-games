@@ -16,6 +16,7 @@ import richGardenRoutes from "./routes/rich-garden.js";
 import goldenMineRoutes from "./routes/golden-mine.js";
 import catChessRoutes from "./routes/cat-chess.js";
 import fishesRoutes from "./routes/fishes.js";
+import achievementsRoutes from "./routes/achievements.js";
 
 // Mine configuration for progress saving
 const MINE_TYPES = {
@@ -167,6 +168,9 @@ app.get("/", (req, res) => {
 
 // Подключаем роуты платформы
 app.use("/api/platform", platformRoutes);
+
+// Подключаем систему достижений
+app.use("/api/achievements", achievementsRoutes);
 
 // Подключаем роуты игры
 app.use("/api/game", happyBirdsRoutes);

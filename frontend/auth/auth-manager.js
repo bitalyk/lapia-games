@@ -1,7 +1,38 @@
+const ACHIEVEMENT_CATALOG = [
+    { key: 'welcome', name: 'Welcome Aboard', description: 'Log in to Lapia Games for the first time.', reward: 0, type: 'system' },
+    { key: 'firstThousand', name: 'First Thousand', description: 'Reach 1,000 coins in any game.', reward: 1, type: 'currency', threshold: 1000 },
+    { key: 'firstTenThousand', name: 'Ten Thousand Club', description: 'Stack up 10,000 coins in a single game.', reward: 5, type: 'currency', threshold: 10000 },
+    { key: 'firstHundredThousand', name: 'Six Figures', description: 'Earn 100,000 coins in any game.', reward: 10, type: 'currency', threshold: 100000 },
+    { key: 'firstMillion', name: 'Millionaire', description: 'Reach 1,000,000 coins in any game.', reward: 25, type: 'currency', threshold: 1000000 },
+    { key: 'firstLpaPurchase', name: 'First LPA Purchase', description: 'Spend LPA coins in the platform shop.', reward: 1, type: 'economy' },
+    { key: 'weeklyDedication', name: 'Weekly Dedication', description: 'Play on 7 consecutive days.', reward: 5, type: 'activity', streak: 7 },
+    { key: 'monthlyMaster', name: 'Monthly Master', description: 'Maintain a 30 day activity streak.', reward: 100, type: 'activity', streak: 30 },
+    { key: 'yearlyLegend', name: 'Yearly Legend', description: 'Stay active for 365 days in a row.', reward: 1500, type: 'activity', streak: 365 },
+    { key: 'friendInviter', name: 'Friend Inviter', description: 'Invite 5 friends to the platform.', reward: 1, type: 'social', inviteCount: 5 }
+];
+
+const GAME_PROGRESS_CONFIG = [
+    { id: 'happy-birds', statusKey: 'happyBirds', label: 'Happy Birds', icon: '🐦' },
+    { id: 'rich-garden', statusKey: 'richGarden', label: 'Rich Garden', icon: '🌳' },
+    { id: 'golden-mine', statusKey: 'goldenMine', label: 'Golden Mine', icon: '⛏️' },
+    { id: 'cat-chess', statusKey: 'catChess', label: 'Cat Chess', icon: '🐱' },
+    { id: 'fishes', statusKey: 'fishes', label: 'Fishes', icon: '🐟' }
+];
+
+const CONVERSION_REQUIREMENT = 1000;
+
 export class AuthManager {
     constructor() {
         this.currentUser = null;
         this.isLoggedIn = false;
+        this.achievementStatus = null;
+        this.achievementModal = null;
+        this.achievementModalContent = null;
+        this.isAchievementModalOpen = false;
+        this.onAchievementKeyDown = (event) => this.handleAchievementKey(event);
+        this.achievementAutoRefreshTimer = null;
+        this.achievementModalRefreshTimer = null;
+        this.liveAchievementUpdateInFlight = false;
         this.API_BASE = "http://localhost:3000/api";
         this.init();
     }
@@ -37,6 +68,16 @@ export class AuthManager {
         
         // Загружаем игровое меню
         this.loadGameMenu();
+
+        // Обновляем достижения и LPA баланс
+        this.achievementStatus = null;
+        this.refreshAchievementStatus({ silent: true }).catch((error) => {
+            console.warn('Failed to refresh achievement status', error);
+        });
+        this.recordDailyActivity({ silent: true }).catch((error) => {
+            console.warn('Failed to record daily activity', error);
+        });
+        this.startAchievementAutoRefresh();
         
         // Отправляем событие
         window.dispatchEvent(new CustomEvent('platformLogin', {
@@ -49,6 +90,8 @@ export class AuthManager {
         console.log('✅ Logout completed');
         this.updateAuthUI();
         this.revealUI();
+        this.stopAchievementAutoRefresh();
+        this.stopAchievementModalRefresh();
         
         window.dispatchEvent(new CustomEvent('platformLogout'));
     }
@@ -86,6 +129,702 @@ export class AuthManager {
         localStorage.setItem(`platform_profile_${profile.username}`, JSON.stringify(normalized));
     }
 
+    mergeServerUserData(serverData = {}) {
+        if (!serverData) {
+            return;
+        }
+
+        if (!this.currentUser) {
+            this.currentUser = { username: serverData.username };
+        }
+
+        if (serverData.username) {
+            this.currentUser.username = serverData.username;
+        }
+
+        if (serverData.platformStats) {
+            this.currentUser.platformStats = {
+                ...(this.currentUser.platformStats || {}),
+                ...serverData.platformStats
+            };
+        }
+
+        if (serverData.platformCurrencies) {
+            this.currentUser.platformCurrencies = {
+                ...(this.currentUser.platformCurrencies || {}),
+                ...serverData.platformCurrencies
+            };
+        }
+
+        if (serverData.gamesProgress) {
+            this.currentUser.gamesProgress = this.mergeProgressMaps(
+                serverData.gamesProgress,
+                this.currentUser.gamesProgress
+            );
+        }
+
+        if (typeof serverData.lpaBalance === 'number') {
+            this.currentUser.lpaBalance = serverData.lpaBalance;
+        }
+
+        if (serverData.achievementProgress) {
+            this.currentUser.achievementProgress = {
+                ...(this.currentUser.achievementProgress || {}),
+                ...serverData.achievementProgress
+            };
+        }
+
+        if (serverData.currencyByGame) {
+            this.currentUser.currencyByGame = {
+                ...(this.currentUser.currencyByGame || {}),
+                ...serverData.currencyByGame
+            };
+            this.syncCurrencyManagerBalances(serverData.currencyByGame);
+        }
+
+        if (serverData.activityStreak) {
+            this.currentUser.activityStreak = {
+                ...(this.currentUser.activityStreak || {}),
+                ...serverData.activityStreak
+            };
+        }
+
+        this.cachePlatformProfile(this.currentUser);
+    }
+
+    applyAchievementStatusToProfile(status) {
+        if (!status || !this.currentUser) {
+            return;
+        }
+
+        if (typeof status.lpaBalance === 'number') {
+            this.currentUser.lpaBalance = status.lpaBalance;
+        }
+        this.currentUser.achievementProgress = {
+            ...(this.currentUser.achievementProgress || {}),
+            ...(status.achievementProgress || {})
+        };
+        this.currentUser.currencyByGame = {
+            ...(this.currentUser.currencyByGame || {}),
+            ...(status.currencyByGame || {})
+        };
+        this.currentUser.activityStreak = {
+            ...(this.currentUser.activityStreak || {}),
+            ...(status.activityStreak || {})
+        };
+        if (typeof status.totalGameCurrency === 'number') {
+            this.currentUser.totalGameCurrency = status.totalGameCurrency;
+        }
+        if (Array.isArray(status.achievementHistory)) {
+            this.currentUser.achievementHistory = [...status.achievementHistory];
+        }
+        if (status.friendInvites) {
+            this.currentUser.friendInvites = {
+                ...(this.currentUser.friendInvites || {}),
+                ...status.friendInvites
+            };
+        }
+
+        GAME_PROGRESS_CONFIG.forEach((game) => {
+            const progressKey = `${game.statusKey}Progress`;
+            if (status[progressKey]) {
+                this.currentUser[progressKey] = {
+                    ...(this.currentUser[progressKey] || {}),
+                    ...status[progressKey]
+                };
+            }
+        });
+
+        this.cachePlatformProfile(this.currentUser);
+        this.syncCurrencyManagerBalances(status.currencyByGame);
+    }
+
+    dispatchAchievementStatusUpdate() {
+        try {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('achievementStatusUpdated', {
+                    detail: { status: this.achievementStatus }
+                }));
+            }
+        } catch (error) {
+            console.warn('Failed to dispatch achievement update', error);
+        }
+    }
+
+    getTodayStamp() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    getActivityStorageKey(username) {
+        if (!username) {
+            return null;
+        }
+        return `platform_activity_${username}`;
+    }
+
+    async recordDailyActivity(options = {}) {
+        const username = this.currentUser?.username;
+        if (!username) {
+            return null;
+        }
+
+        const storageKey = this.getActivityStorageKey(username);
+        const todayStamp = this.getTodayStamp();
+
+        if (!options.force && storageKey) {
+            try {
+                const lastRecorded = localStorage.getItem(storageKey);
+                if (lastRecorded === todayStamp) {
+                    await this.refreshAchievementStatus({ silent: true });
+                    return null;
+                }
+            } catch (error) {
+                console.warn('Unable to read activity cache:', error);
+            }
+        }
+
+        try {
+            const response = await fetch(`${this.API_BASE}/achievements/record-activity`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to record activity');
+            }
+
+            if (storageKey) {
+                try {
+                    localStorage.setItem(storageKey, todayStamp);
+                } catch (error) {
+                    console.warn('Unable to persist activity cache:', error);
+                }
+            }
+
+            this.achievementStatus = data.status;
+            this.applyAchievementStatusToProfile(this.achievementStatus);
+            this.updateAchievementUI();
+            this.saveProgress();
+            this.dispatchAchievementStatusUpdate();
+
+            return data.result || { recorded: true };
+        } catch (error) {
+            if (!options.silent) {
+                console.error('Failed to record daily activity:', error);
+            }
+            return null;
+        }
+    }
+
+    async runLiveAchievementUpdate() {
+        if (this.liveAchievementUpdateInFlight || !this.isLoggedIn) {
+            return;
+        }
+
+        this.liveAchievementUpdateInFlight = true;
+        try {
+            const recorded = await this.recordDailyActivity({ silent: true });
+            if (!recorded) {
+                await this.refreshAchievementStatus({ silent: true });
+            }
+        } catch (error) {
+            console.warn('Live achievement update failed:', error);
+        } finally {
+            this.liveAchievementUpdateInFlight = false;
+        }
+    }
+
+    startAchievementAutoRefresh() {
+        this.stopAchievementAutoRefresh();
+        if (!this.isLoggedIn) {
+            return;
+        }
+
+        this.runLiveAchievementUpdate().catch(() => {
+            /* noop */
+        });
+
+        this.achievementAutoRefreshTimer = setInterval(() => {
+            this.runLiveAchievementUpdate().catch(() => {
+                /* noop */
+            });
+        }, 60000);
+    }
+
+    stopAchievementAutoRefresh() {
+        if (this.achievementAutoRefreshTimer) {
+            clearInterval(this.achievementAutoRefreshTimer);
+            this.achievementAutoRefreshTimer = null;
+        }
+    }
+
+    startAchievementModalRefresh() {
+        this.stopAchievementModalRefresh();
+        if (!this.isAchievementModalOpen) {
+            return;
+        }
+
+        this.achievementModalRefreshTimer = setInterval(() => {
+            this.runLiveAchievementUpdate().catch(() => {
+                /* noop */
+            });
+        }, 15000);
+    }
+
+    stopAchievementModalRefresh() {
+        if (this.achievementModalRefreshTimer) {
+            clearInterval(this.achievementModalRefreshTimer);
+            this.achievementModalRefreshTimer = null;
+        }
+    }
+
+    formatNumber(value) {
+        if (typeof value !== 'number' || Number.isNaN(value)) {
+            return '0';
+        }
+        return value.toLocaleString();
+    }
+
+    syncCurrencyManagerBalances(currencyByGame = {}) {
+        if (!window.currencyManager || !currencyByGame || typeof currencyByGame !== 'object') {
+            return;
+        }
+
+        const keyMap = {
+            happyBirds: { key: 'happy-birds', name: 'Bird Eggs', symbol: '🥚' },
+            richGarden: { key: 'rich-garden', name: 'Garden Goods', symbol: '🍎' },
+            goldenMine: { key: 'golden-mine', name: 'Mine Gold', symbol: '⛏️' },
+            catChess: { key: 'cat-chess', name: 'Chess Tokens', symbol: '♞' },
+            fishes: { key: 'fishes', name: 'Aquarium Coins', symbol: '🐟' }
+        };
+
+        let updated = false;
+
+        Object.entries(keyMap).forEach(([statusKey, meta]) => {
+            const amount = currencyByGame[statusKey];
+            if (typeof amount === 'number') {
+                const { key, name, symbol } = meta;
+                if (!window.currencyManager.currencies[key]) {
+                    window.currencyManager.currencies[key] = {
+                        name,
+                        symbol,
+                        balance: 0
+                    };
+                }
+                window.currencyManager.currencies[key].balance = amount;
+                updated = true;
+            }
+        });
+
+        if (updated) {
+            window.currencyManager.updateUI();
+        }
+    }
+
+    async refreshAchievementStatus(options = {}) {
+        if (!this.currentUser?.username) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(`${this.API_BASE}/achievements/status/${this.currentUser.username}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to load achievement status');
+            }
+
+            this.achievementStatus = data.status;
+            this.applyAchievementStatusToProfile(this.achievementStatus);
+            this.updateAchievementUI();
+            this.saveProgress();
+            this.dispatchAchievementStatusUpdate();
+            return this.achievementStatus;
+        } catch (error) {
+            if (!options.silent) {
+                console.error('Failed to refresh achievements:', error);
+            }
+            return null;
+        }
+    }
+
+    updateAchievementUI() {
+        const status = this.achievementStatus;
+        const lpaDisplay = document.getElementById('lpa-balance');
+        if (lpaDisplay) {
+            const balance = status ? status.lpaBalance || 0 : (this.currentUser?.lpaBalance || 0);
+            lpaDisplay.textContent = `💎 LPA Coins: ${balance}`;
+        }
+
+        const achievementCountEl = document.getElementById('achievement-count');
+        if (achievementCountEl) {
+            const unlocked = (status && typeof status.unlockedCount === 'number')
+                ? status.unlockedCount
+                : Object.values(this.currentUser?.achievementProgress || {}).filter(Boolean).length;
+            const total = (status && typeof status.totalAchievements === 'number')
+                ? status.totalAchievements
+                : Object.keys(this.currentUser?.achievementProgress || {}).length;
+            achievementCountEl.textContent = `🏆 Achievements: ${unlocked}/${total || 0}`;
+        }
+
+        const streakEl = document.getElementById('activity-streak');
+        if (streakEl) {
+            const streak = status?.activityStreak?.currentStreak || this.currentUser?.activityStreak?.currentStreak || 0;
+            streakEl.textContent = `🔥 Streak: ${streak} ${streak === 1 ? 'day' : 'days'}`;
+        }
+
+        if (this.isAchievementModalOpen) {
+            this.renderAchievementModal();
+        }
+    }
+
+    async convertCoinsToLpa(count = 1, options = {}) {
+        if (!this.currentUser?.username) {
+            return;
+        }
+
+        const normalizedCount = Math.max(0, Math.floor(Number(count) || 0));
+        if (normalizedCount <= 0) {
+            if (window.showToast) {
+                window.showToast('Choose at least one conversion.', 'info');
+            }
+            return null;
+        }
+
+        try {
+            const response = await fetch(`${this.API_BASE}/achievements/convert`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: this.currentUser.username, count: normalizedCount })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Conversion failed');
+            }
+
+            this.achievementStatus = data.status;
+            this.applyAchievementStatusToProfile(this.achievementStatus);
+            this.updateAchievementUI();
+            this.saveProgress();
+            this.dispatchAchievementStatusUpdate();
+
+            if (window.showToast) {
+                if (data.conversion?.converted > 0) {
+                    window.showToast(`💎 Converted ${data.conversion.converted} LPA!`, 'success');
+                } else {
+                    window.showToast('Conversion not available yet.', 'info');
+                }
+            }
+
+            return data;
+        } catch (error) {
+            console.error('Conversion error:', error);
+            if (window.showToast) {
+                window.showToast('Conversion failed. Please try again later.', 'error');
+            }
+            return null;
+        }
+    }
+
+    getAchievementSnapshot() {
+        const profile = this.currentUser || {};
+        const status = this.achievementStatus || null;
+        const baseProgress = (status && status.achievementProgress) || profile.achievementProgress || {};
+        const currency = { ...((status && status.currencyByGame) || profile.currencyByGame || {}) };
+        const streak = (status && status.activityStreak) || profile.activityStreak || {};
+        const friendInvites = (status && status.friendInvites) || profile.friendInvites || {};
+        const historyKeys = new Set((status?.achievementHistory || []).map((entry) => entry.key));
+        const progress = { ...baseProgress };
+        historyKeys.forEach((key) => {
+            progress[key] = true;
+        });
+        const totalAchievements = status?.totalAchievements || ACHIEVEMENT_CATALOG.length;
+        const fallbackUnlocked = Object.values(progress).filter(Boolean).length;
+        const unlockedCount = typeof status?.unlockedCount === 'number' ? status.unlockedCount : fallbackUnlocked;
+        const lpaBalance = typeof status?.lpaBalance === 'number' ? status.lpaBalance : (profile.lpaBalance || 0);
+        const conversionCapacity = typeof status?.conversionCapacity === 'number' ? status.conversionCapacity : 0;
+        const currencyValues = GAME_PROGRESS_CONFIG.map((game) => {
+            const statusKey = game.statusKey;
+            const progressKey = `${statusKey}Progress`;
+            const baseAmount = Number(currency[statusKey] || 0);
+            const statusProgress = Number(status?.[progressKey]?.coins || 0);
+            const userProgress = Number(this.currentUser?.[progressKey]?.coins || profile?.[progressKey]?.coins || 0);
+            const bestValue = Math.max(0, baseAmount, statusProgress, userProgress);
+            if (bestValue > baseAmount) {
+                currency[statusKey] = bestValue;
+            }
+            return bestValue;
+        });
+        const achievedCurrencyThresholds = ACHIEVEMENT_CATALOG
+            .filter((definition) => definition.type === 'currency' && typeof definition.threshold === 'number')
+            .map((definition) => (progress[definition.key] ? definition.threshold : 0));
+        const currencyHighScore = Math.max(0, ...currencyValues, ...achievedCurrencyThresholds);
+
+        return {
+            status,
+            progress,
+            currency,
+            streak,
+            friendInvites,
+            totalAchievements,
+            unlockedCount,
+            lpaBalance,
+            conversionCapacity,
+            currencyHighScore
+        };
+    }
+
+    ensureAchievementModal() {
+        if (this.achievementModal && this.achievementModalContent) {
+            return this.achievementModal;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'achievement-overlay';
+        overlay.className = 'achievement-overlay hidden';
+        overlay.innerHTML = `
+            <div class="achievement-modal" role="dialog" aria-modal="true" aria-labelledby="achievement-modal-title">
+                <div class="achievement-modal__header">
+                    <h2 id="achievement-modal-title">🏆 Achievements</h2>
+                    <button type="button" class="achievement-modal__close" aria-label="Close achievements">×</button>
+                </div>
+                <div class="achievement-modal__body">
+                    <div class="achievement-modal-content">
+                        <div class="achievement-loading">Loading achievement data...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        this.achievementModal = overlay;
+        this.achievementModalContent = overlay.querySelector('.achievement-modal-content');
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                this.closeAchievements();
+            }
+        });
+
+        const closeBtn = overlay.querySelector('.achievement-modal__close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.closeAchievements());
+        }
+
+        return overlay;
+    }
+
+    getAchievementProgressHint(definition, snapshot) {
+        if (!definition || !snapshot) {
+            return '';
+        }
+
+        if (snapshot.progress?.[definition.key]) {
+            return 'Completed';
+        }
+
+        if (definition.type === 'currency' && definition.threshold) {
+            return `Best run: ${this.formatNumber(snapshot.currencyHighScore)} / ${this.formatNumber(definition.threshold)} coins`;
+        }
+
+        if (definition.type === 'activity' && definition.streak) {
+            const currentStreak = snapshot.streak?.currentStreak || 0;
+            return `Current streak: ${currentStreak} / ${definition.streak} days`;
+        }
+
+        if (definition.type === 'social' && definition.inviteCount) {
+            const count = snapshot.friendInvites?.invitedCount || 0;
+            return `Invites sent: ${count} / ${definition.inviteCount}`;
+        }
+
+        if (definition.key === 'firstLpaPurchase') {
+            return 'Make any purchase using LPA coins.';
+        }
+
+        if (definition.key === 'welcome') {
+            return 'Log in to unlock this achievement.';
+        }
+
+        return '';
+    }
+
+    getAchievementProgressMetrics(definition, snapshot) {
+        const unlocked = !!snapshot?.progress?.[definition.key];
+        if (unlocked) {
+            return { percent: 100, label: 'Completed' };
+        }
+
+        if (!definition || !snapshot) {
+            return { percent: 0, label: 'Progress unavailable' };
+        }
+
+        const clampPercent = (value) => Math.max(0, Math.min(100, Math.round(value)));
+
+        if (definition.type === 'currency' && definition.threshold) {
+            const current = Math.max(0, Math.min(definition.threshold, snapshot.currencyHighScore || 0));
+            const percent = definition.threshold > 0 ? clampPercent((current / definition.threshold) * 100) : 0;
+            return {
+                percent,
+                label: `${this.formatNumber(current)} / ${this.formatNumber(definition.threshold)} coins`
+            };
+        }
+
+        if (definition.type === 'activity' && definition.streak) {
+            const current = Math.max(0, snapshot.streak?.currentStreak || 0);
+            const percent = definition.streak > 0 ? clampPercent((current / definition.streak) * 100) : 0;
+            return {
+                percent,
+                label: `${current} / ${definition.streak} days`
+            };
+        }
+
+        if (definition.type === 'social' && definition.inviteCount) {
+            const current = Math.max(0, snapshot.friendInvites?.invitedCount || 0);
+            const percent = definition.inviteCount > 0 ? clampPercent((current / definition.inviteCount) * 100) : 0;
+            return {
+                percent,
+                label: `${current} / ${definition.inviteCount} invites`
+            };
+        }
+
+        if (definition.key === 'firstLpaPurchase') {
+            return { percent: 0, label: 'Spend LPA coins in the shop.' };
+        }
+
+        if (definition.key === 'welcome') {
+            return { percent: 0, label: 'Log in once to unlock.' };
+        }
+
+        return { percent: 0, label: 'Try playing more to discover progress.' };
+    }
+
+    renderAchievementModal() {
+        if (!this.achievementModalContent) {
+            return;
+        }
+
+        const snapshot = this.getAchievementSnapshot();
+
+        if (!snapshot.status) {
+            this.achievementModalContent.innerHTML = '<div class="achievement-loading">Loading achievement data...</div>';
+            return;
+        }
+
+        const achievementCards = ACHIEVEMENT_CATALOG.map((definition) => {
+            const unlocked = !!snapshot.progress?.[definition.key];
+            const rewardLabel = typeof definition.reward === 'number' && definition.reward > 0
+                ? `+${this.formatNumber(definition.reward)} LPA`
+                : 'No LPA reward';
+            const hint = this.getAchievementProgressHint(definition, snapshot);
+            const progressInfo = this.getAchievementProgressMetrics(definition, snapshot);
+            return `
+                <div class="achievement-card ${unlocked ? 'achievement-card--unlocked' : 'achievement-card--locked'}">
+                    <div class="achievement-card__header">
+                        <h4>${definition.name}</h4>
+                        <span class="achievement-card__reward">${rewardLabel}</span>
+                    </div>
+                    <p class="achievement-card__description">${definition.description}</p>
+                    ${hint ? `<p class="achievement-card__hint">${hint}</p>` : ''}
+                    <div class="achievement-card__progress">
+                        <div class="achievement-progress-bar">
+                            <div class="achievement-progress-fill" style="width: ${progressInfo.percent}%;"></div>
+                        </div>
+                        <div class="achievement-progress-label">${progressInfo.label}</div>
+                    </div>
+                    <div class="achievement-card__status">${unlocked ? 'Unlocked' : 'Locked'}</div>
+                </div>
+            `;
+        }).join('');
+
+        this.achievementModalContent.innerHTML = `
+            <div class="achievements-summary">
+                <div class="achievements-summary-card">
+                    <span class="achievements-summary-label">LPA Balance</span>
+                    <span class="achievements-summary-value">💎 ${this.formatNumber(snapshot.lpaBalance)}</span>
+                </div>
+                <div class="achievements-summary-card">
+                    <span class="achievements-summary-label">Achievements</span>
+                    <span class="achievements-summary-value">🏆 ${snapshot.unlockedCount}/${snapshot.totalAchievements}</span>
+                </div>
+                <div class="achievements-summary-card">
+                    <span class="achievements-summary-label">Daily Streak</span>
+                    <span class="achievements-summary-value">🔥 ${snapshot.streak?.currentStreak || 0} days</span>
+                </div>
+                <div class="achievements-summary-card">
+                    <span class="achievements-summary-label">Conversions Ready</span>
+                    <span class="achievements-summary-value">🔄 ${this.formatNumber(snapshot.conversionCapacity)}</span>
+                </div>
+            </div>
+            <section class="achievements-section">
+                <h3>Achievement List</h3>
+                <div class="achievements-grid">
+                    ${achievementCards}
+                </div>
+            </section>
+        `;
+    }
+
+    async openAchievements() {
+        console.log('🏆 Opening achievements...');
+        this.ensureAchievementModal();
+        this.isAchievementModalOpen = true;
+        this.startAchievementModalRefresh();
+
+        if (this.achievementModal) {
+            this.achievementModal.classList.remove('hidden');
+        }
+
+        document.body.classList.add('modal-open');
+        window.addEventListener('keydown', this.onAchievementKeyDown);
+
+        this.renderAchievementModal();
+        await this.runLiveAchievementUpdate();
+        if (!this.achievementStatus && window.showToast) {
+            window.showToast('Unable to load achievements right now.', 'error');
+        }
+        this.renderAchievementModal();
+    }
+
+    closeAchievements() {
+        if (!this.achievementModal) {
+            return;
+        }
+
+        this.isAchievementModalOpen = false;
+        this.stopAchievementModalRefresh();
+        this.achievementModal.classList.add('hidden');
+        const conversionOverlay = document.querySelector('.conversion-overlay');
+        const conversionOpen = conversionOverlay && !conversionOverlay.classList.contains('hidden');
+        if (!conversionOpen) {
+            document.body.classList.remove('modal-open');
+        }
+        window.removeEventListener('keydown', this.onAchievementKeyDown);
+    }
+
+    handleAchievementKey(event) {
+        if (event.key === 'Escape' && this.isAchievementModalOpen) {
+            this.closeAchievements();
+        }
+    }
+
     // ✅ ДОБАВЛЯЕМ: Создание профиля пользователя
     async createUserProfile(userProfile) {
         if (!userProfile.gamesProgress) {
@@ -97,6 +836,9 @@ export class AuthManager {
         const initialCurrencies = {
             'platform': { name: 'Platform Tokens', symbol: '🪙', balance: 100 },
             'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 },
+            'rich-garden': { name: 'Garden Goods', symbol: '🍎', balance: 0 },
+            'golden-mine': { name: 'Mine Gold', symbol: '⛏️', balance: 0 },
+            'cat-chess': { name: 'Chess Tokens', symbol: '♞', balance: 0 },
             'fishes': { name: 'Aquarium Coins', symbol: '🐟', balance: 0 }
         };
         
@@ -243,6 +985,9 @@ export class AuthManager {
             const initialCurrencies = {
                 'platform': { name: 'Platform Tokens', symbol: '🪙', balance: 100 },
                 'happy-birds': { name: 'Bird Eggs', symbol: '🥚', balance: 0 },
+                'rich-garden': { name: 'Garden Goods', symbol: '🍎', balance: 0 },
+                'golden-mine': { name: 'Mine Gold', symbol: '⛏️', balance: 0 },
+                'cat-chess': { name: 'Chess Tokens', symbol: '♞', balance: 0 },
                 'fishes': { name: 'Aquarium Coins', symbol: '🐟', balance: 0 }
             };
             localStorage.setItem(`currency_balances_${username}`, JSON.stringify(initialCurrencies));
@@ -301,6 +1046,7 @@ export class AuthManager {
         window.openSettings = () => this.openSettings();
         window.launchGame = (gameId) => this.launchGame(gameId);
         window.logout = () => this.logout();
+        window.refreshAchievements = (options) => this.refreshAchievementStatus(options || {});
     }
 
     // ✅ ОБНОВЛЕННЫЙ: Проверка существующей сессии
@@ -460,19 +1206,20 @@ export class AuthManager {
             if (data.success) {
                 // Загружаем профиль платформы
                 const userProfile = await this.resolveCurrentUserProfile(username);
-                
+
                 this.currentUser = userProfile;
+                this.mergeServerUserData(data.user);
                 this.isLoggedIn = true;
-                
+
                 // Сохраняем сессию
-                this.saveSession(userProfile);
-                
+                this.saveSession(this.currentUser);
+
                 // Инициализируем валюты для пользователя
                 await this.initializeUserCurrencies(username);
-                
-                this.onLoginSuccess(userProfile);
-                
-                return { success: true, user: userProfile };
+
+                this.onLoginSuccess(this.currentUser);
+
+                return { success: true, user: this.currentUser };
             } else {
                 return { success: false, error: data.error || "Login failed" };
             }
@@ -487,7 +1234,9 @@ export class AuthManager {
         console.log('🏪 Opening shop...');
         if (window.shopUI) {
             window.shopUI.show();
-            window.shopUI.switchTab('marketplace');
+            if (typeof window.shopUI.switchTab === 'function') {
+                window.shopUI.switchTab('marketplace');
+            }
         } else {
             alert('Shop system is loading... Please wait a moment.');
         }
@@ -497,15 +1246,12 @@ export class AuthManager {
         console.log('💱 Opening exchange...');
         if (window.shopUI) {
             window.shopUI.show();
-            window.shopUI.switchTab('exchange');
+            if (typeof window.shopUI.switchTab === 'function') {
+                window.shopUI.switchTab('exchange');
+            }
         } else {
             alert('Exchange system is loading... Please wait a moment.');
         }
-    }
-
-    openAchievements() {
-        console.log('🏆 Opening achievements...');
-        alert('Achievements system is coming soon!');
     }
 
     openSettings() {
@@ -539,9 +1285,11 @@ export class AuthManager {
         
         // Сохраняем прогресс перед выходом
         this.saveProgress();
+        this.closeAchievements();
         
         this.currentUser = null;
         this.isLoggedIn = false;
+        this.achievementStatus = null;
         
         // Очищаем хранилище
         localStorage.removeItem('platform_user');
@@ -652,7 +1400,7 @@ export class AuthManager {
         });
 
         // Кнопки достижений и настроек
-        const achievementBtns = document.querySelectorAll('[onclick*="openAchievements"]');
+        const achievementBtns = document.querySelectorAll('.achievements-btn, [onclick*="openAchievements"]');
         achievementBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -660,36 +1408,37 @@ export class AuthManager {
             });
         });
 
-        const settingsBtns = document.querySelectorAll('[onclick*="openSettings"]');
+        const settingsBtns = document.querySelectorAll('.settings-btn, [onclick*="openSettings"]');
         settingsBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.openSettings();
             });
         });
+
     }
 
     // ✅ ПРОСТОЙ ВАРИАНТ: Удаляем только по классам (рекомендуется)
-removeMenuEventListeners() {
-    const selectors = [
-        '.logout-btn',
-        '.shop-btn', 
-        '.exchange-btn',
-        '.game-card:not(.disabled)',
-        '.achievements-btn',
-        '.settings-btn'
-    ];
-    
-    const selectorString = selectors.join(', ');
-    const elements = document.querySelectorAll(selectorString);
-    
-    elements.forEach(element => {
-        const newElement = element.cloneNode(true);
-        if (element.parentNode) {
-            element.parentNode.replaceChild(newElement, element);
-        }
-    });
-}
+    removeMenuEventListeners() {
+        const selectors = [
+            '.logout-btn',
+            '.shop-btn',
+            '.exchange-btn',
+            '.game-card:not(.disabled)',
+            '.achievements-btn',
+            '.settings-btn'
+        ];
+
+        const selectorString = selectors.join(', ');
+        const elements = document.querySelectorAll(selectorString);
+
+        elements.forEach(element => {
+            const newElement = element.cloneNode(true);
+            if (element.parentNode) {
+                element.parentNode.replaceChild(newElement, element);
+            }
+        });
+    }
 
     // ✅ ОБНОВЛЕННЫЙ: Запуск игры из меню
     launchGameFromMenu(gameTitle) {
@@ -715,7 +1464,6 @@ removeMenuEventListeners() {
     updateMenuUserInfo() {
         try {
             const usernameDisplay = document.getElementById('username-display');
-            const platformTokens = document.getElementById('platform-tokens');
             const hbLastPlayed = document.getElementById('hb-last-played');
             const rgLastPlayed = document.getElementById('rg-last-played');
             const gmLastPlayed = document.getElementById('gm-last-played');
@@ -725,12 +1473,6 @@ removeMenuEventListeners() {
             // Обновляем имя пользователя
             if (usernameDisplay && this.currentUser) {
                 usernameDisplay.textContent = this.currentUser.username;
-            }
-            
-            // Обновляем токены платформы
-            if (platformTokens && window.currencyManager) {
-                const tokens = window.currencyManager.getBalance('platform');
-                platformTokens.textContent = `🪙 Platform Tokens: ${tokens}`;
             }
             
             // Обновляем последнюю игру Happy Birds
@@ -761,6 +1503,8 @@ removeMenuEventListeners() {
                 const lastPlayed = this.getFishesLastPlayed();
                 fgLastPlayed.textContent = lastPlayed;
             }
+
+            this.updateAchievementUI();
             
             console.log('📊 Menu user info updated');
         } catch (error) {

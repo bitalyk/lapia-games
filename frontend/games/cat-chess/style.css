@@ -676,34 +676,37 @@
     box-shadow: 0 14px 28px rgba(99, 102, 241, 0.45);
 }
 
-.shop-modal {
+#cc-shop-modal {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.7);
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
-    padding: 20px;
+    padding: 32px 20px;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(6px);
+    z-index: 3000;
+    overflow-y: auto;
 }
 
-.shop-modal.open {
+#cc-shop-modal.open {
     display: flex;
 }
 
-.shop-dialog {
-    background: #0f172a;
-    border-radius: 16px;
-    padding: 20px 24px 26px;
-    width: min(720px, 90vw);
-    box-shadow: 0 22px 45px rgba(15, 23, 42, 0.55);
-    border: 1px solid rgba(148, 163, 184, 0.25);
+#cc-shop-modal .shop-dialog {
+    background: #101b33;
+    border-radius: 18px;
+    padding: 24px 28px 30px;
+    width: min(520px, 100%);
+    box-shadow: 0 24px 48px rgba(8, 15, 35, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.35);
     display: flex;
     flex-direction: column;
     gap: 18px;
+    max-height: calc(100vh - 96px);
 }
 
-.shop-header {
+#cc-shop-modal .shop-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -712,7 +715,7 @@
     padding-bottom: 8px;
 }
 
-.shop-close {
+#cc-shop-modal .shop-close {
     background: transparent;
     border: none;
     color: #e2e8f0;
@@ -722,17 +725,17 @@
     padding: 4px;
 }
 
-.shop-close:hover {
+#cc-shop-modal .shop-close:hover {
     color: #facc15;
 }
 
-.shop-list {
+#cc-shop-modal .shop-list {
     max-height: 50vh;
     overflow-y: auto;
     padding-right: 6px;
 }
 
-.shop-empty {
+#cc-shop-modal .shop-empty {
     color: #94a3b8;
     text-align: center;
     padding: 20px;

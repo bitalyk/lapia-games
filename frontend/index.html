@@ -47,8 +47,8 @@
         <ul>
           <li>🎮 Multiple games in one platform</li>
           <li>🪙 Cross-game currency system</li>
-          <li>🏪 Unified marketplace</li>
-          <li>🏆 Achievement system</li>
+          <li>� Unified marketplace</li>
+          <li>�🏆 Achievement system</li>
           <li>🔐 Secure authentication</li>
         </ul>
       </div>
@@ -69,14 +69,10 @@
 <script type="module">
     // ✅ Загружаем модули в правильном порядке
     import { AuthManager } from './auth/auth-manager.js';
-    import { CurrencyManager } from './shop/currency-manager.js';
-    import { CryptoShop } from './shop/crypto-shop.js';
     import { ShopUI } from './shop/shop-ui.js';
     
     // Инициализируем системы
     window.authManager = new AuthManager();
-    window.currencyManager = new CurrencyManager();
-    window.cryptoShop = new CryptoShop();
     window.shopUI = new ShopUI();
     
     console.log('✅ All systems initialized');

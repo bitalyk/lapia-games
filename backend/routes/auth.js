@@ -2,6 +2,7 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import User from "../models/user.js";
+import AchievementManager from "../services/achievement-manager.js";
 
 const router = express.Router();
 
@@ -53,6 +54,11 @@ router.post("/register", async (req, res) => {
 
     await user.save();
 
+    const achievementStatus = AchievementManager.getStatus(user);
+    if (user.isModified()) {
+      await user.save();
+    }
+
     // Return full user data
     return res.json({
       success: true,
@@ -61,7 +67,10 @@ router.post("/register", async (req, res) => {
         platformStats: user.platformStats,
         platformCurrencies: user.platformCurrencies,
         gamesProgress: Object.fromEntries(user.gamesProgress),
-        registeredAt: user.createdAt
+        registeredAt: user.createdAt,
+        lpaBalance: user.lpaBalance,
+        achievementProgress: achievementStatus.achievementProgress,
+        currencyByGame: achievementStatus.currencyByGame
       }
     });
   } catch (err) {
@@ -88,9 +97,12 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid password" });
     }
 
-    // Update last login
+    // Update last login and record activity streak
     user.platformStats.lastLogin = new Date();
     user.lastActive = new Date();
+
+    AchievementManager.recordActivity(user, new Date());
+    const achievementStatus = AchievementManager.getStatus(user);
     await user.save();
 
     return res.json({
@@ -100,7 +112,13 @@ router.post("/login", async (req, res) => {
         platformStats: user.platformStats,
         platformCurrencies: user.platformCurrencies,
         gamesProgress: Object.fromEntries(user.gamesProgress),
-        inventory: user.inventory
+        inventory: user.inventory,
+        lpaBalance: user.lpaBalance,
+        achievementProgress: achievementStatus.achievementProgress,
+        currencyByGame: achievementStatus.currencyByGame,
+        activityStreak: achievementStatus.activityStreak,
+        achievementsUnlocked: achievementStatus.unlockedCount,
+        achievementsTotal: achievementStatus.totalAchievements
       }
     });
   } catch (err) {
