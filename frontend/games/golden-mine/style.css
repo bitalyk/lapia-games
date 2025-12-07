@@ -1,137 +1,198 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Antonio:wght@600&display=swap');
+
 /* Golden Mine Game Styles */
 
 .golden-mine-game {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 20px;
-    font-family: 'Arial', sans-serif;
-    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    padding: 32px;
+    font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at 20% 20%, rgba(255, 198, 109, 0.12), transparent 50%),
+        radial-gradient(circle at 85% 0%, rgba(100, 255, 255, 0.12), transparent 40%),
+        linear-gradient(135deg, #05070f 0%, #0b1426 45%, #050812 100%);
     min-height: 100vh;
-    color: #ecf0f1;
+    color: #f8fafc;
+    position: relative;
+    overflow: hidden;
+}
+
+.golden-mine-game::before,
+.golden-mine-game::after {
+    content: '';
+    position: absolute;
+    width: 480px;
+    height: 480px;
+    border-radius: 50%;
+    pointer-events: none;
+    filter: blur(40px);
+}
+
+.golden-mine-game::before {
+    inset: -140px auto auto -120px;
+    background: radial-gradient(circle, rgba(255, 214, 150, 0.22), transparent 65%);
+}
+
+.golden-mine-game::after {
+    inset: auto -160px -180px auto;
+    background: radial-gradient(circle, rgba(79, 209, 197, 0.18), transparent 65%);
 }
 
 /* Header */
 .game-header {
+    position: relative;
+    z-index: 1;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 30px;
-    padding: 20px;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 12px;
-    backdrop-filter: blur(10px);
+    margin-bottom: 32px;
+    padding: 28px;
+    border-radius: 28px;
+    background: linear-gradient(120deg, rgba(15, 22, 47, 0.95), rgba(11, 26, 52, 0.9));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
 }
 
 .game-header h1 {
-    color: #f39c12;
     margin: 0;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-    font-size: 2.5em;
+    font-family: 'Antonio', 'Space Grotesk', sans-serif;
+    font-size: clamp(2.2rem, 4vw, 3rem);
+    letter-spacing: 0.02em;
+    color: #ffe08a;
+}
+
+.golden-mine-game .back-button {
+    border: none;
+    border-radius: 16px;
+    padding: 12px 22px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: linear-gradient(120deg, rgba(255, 206, 134, 0.25), rgba(255, 255, 255, 0.12));
+    color: #fdf5d8;
+    border: 1px solid rgba(255, 224, 138, 0.45);
+    box-shadow: 0 18px 30px rgba(0, 0, 0, 0.4), inset 0 0 20px rgba(255, 224, 138, 0.12);
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.golden-mine-game .back-button:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(120deg, rgba(255, 206, 134, 0.45), rgba(255, 255, 255, 0.2));
+    box-shadow: 0 25px 40px rgba(0, 0, 0, 0.5), inset 0 0 26px rgba(255, 224, 138, 0.3);
+}
+
+.golden-mine-game .back-button:focus-visible {
+    outline: 2px solid rgba(255, 224, 138, 0.8);
+    outline-offset: 3px;
 }
 
 .coins-display {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 10px;
-    background: rgba(0, 0, 0, 0.5);
-    padding: 15px 25px;
-    border-radius: 25px;
-    border: 2px solid #f39c12;
+    gap: 12px;
+    padding: 14px 24px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 208, 122, 0.5);
+    box-shadow: inset 0 0 20px rgba(255, 208, 122, 0.15);
 }
 
 .coin-icon {
-    font-size: 1.5em;
+    font-size: 1.4rem;
 }
 
 .coin-amount {
-    font-size: 1.8em;
-    font-weight: bold;
-    color: #f1c40f;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #ffe08a;
 }
 
 /* Game Content */
 .game-content {
+    position: relative;
+    z-index: 1;
     display: grid;
-    grid-template-columns: 1fr 300px;
-    gap: 30px;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 32px;
 }
 
 /* Mines Section */
 .mines-section {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 25px;
-    border-radius: 12px;
-    backdrop-filter: blur(10px);
+    background: rgba(9, 16, 37, 0.9);
+    padding: 28px;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
 }
 
 .section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .section-header h2 {
-    color: #e74c3c;
     margin: 0;
-    font-size: 1.8em;
+    font-size: 1.8rem;
+    font-family: 'Antonio', 'Space Grotesk', sans-serif;
+    letter-spacing: 0.04em;
 }
 
 .collect-all-btn {
-    background: linear-gradient(45deg, #f39c12, #e67e22);
-    color: #ffffff;
     border: none;
-    padding: 10px 18px;
-    border-radius: 6px;
+    border-radius: 18px;
+    padding: 12px 22px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: linear-gradient(120deg, #f7ce68, #fbab7e);
+    color: #0c131f;
     cursor: pointer;
-    font-weight: bold;
-    transition: all 0.3s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.collect-all-btn:hover {
-    background: linear-gradient(45deg, #e67e22, #d35400);
-    transform: translateY(-1px);
+.collect-all-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 32px rgba(247, 206, 104, 0.3);
 }
 
 .collect-all-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
-    transform: none;
+    box-shadow: none;
 }
 
-.collect-all-btn:disabled:hover {
-    background: linear-gradient(45deg, #f39c12, #e67e22);
-}
 
 .mines-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    grid-template-rows: repeat(2, 1fr);
-    gap: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
 }
 
 /* Mine Slots */
+
 .mine-slot {
-    min-height: 200px;
+    min-height: 230px;
 }
 
 .empty-mine {
-    background: rgba(255, 255, 255, 0.1);
-    border: 2px dashed #7f8c8d;
-    border-radius: 8px;
-    padding: 15px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 2px dashed rgba(255, 224, 138, 0.5);
+    border-radius: 20px;
+    padding: 20px;
     text-align: center;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     height: 100%;
-    transition: all 0.3s ease;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .empty-mine:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: #f39c12;
+    border-color: #ffe08a;
+    transform: translateY(-4px);
+    box-shadow: 0 18px 30px rgba(255, 224, 138, 0.2);
 }
 
 .mine-icon {
@@ -163,28 +224,40 @@
 
 /* Mine Cards */
 .mine-card {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 8px;
-    padding: 15px;
+    background: linear-gradient(160deg, rgba(15, 23, 45, 0.95), rgba(8, 13, 28, 0.92));
+    border-radius: 22px;
+    padding: 20px;
     height: 100%;
     display: flex;
     flex-direction: column;
-    color: #2c3e50;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    transition: all 0.3s ease;
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 25px 40px rgba(0, 0, 0, 0.45);
+    position: relative;
+    overflow: hidden;
+}
+
+.mine-card::before {
+    content: '';
+    position: absolute;
+    inset: -20% auto auto -40%;
+    width: 180px;
+    height: 180px;
+    background: radial-gradient(circle, rgba(255, 224, 138, 0.2), transparent 65%);
+    pointer-events: none;
 }
 
 .mine-card.producing {
-    border-left: 4px solid #3498db;
+    border-color: rgba(80, 194, 255, 0.5);
 }
 
 .mine-card.ready {
-    border-left: 4px solid #e74c3c;
+    border-color: rgba(255, 139, 109, 0.5);
     animation: pulse 2s infinite;
 }
 
 .mine-card.resting {
-    border-left: 4px solid #f39c12;
+    border-color: rgba(247, 206, 104, 0.4);
 }
 
 @keyframes pulse {
@@ -193,138 +266,137 @@
     100% { box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4); }
 }
 
+@media (max-width: 1024px) {
+    .game-content {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .inventory,
+    .truck-section {
+        flex: 1 1 320px;
+    }
+}
+
+@media (max-width: 640px) {
+    .golden-mine-game {
+        padding: 20px;
+    }
+
+    .game-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 18px;
+    }
+}
+
 .mine-header {
     display: flex;
     align-items: center;
-    margin-bottom: 10px;
-}
-
-.mine-info {
-    margin-left: 10px;
-}
-
-.mine-name {
-    font-weight: bold;
-    font-size: 1.1em;
-    color: #2c3e50;
-}
-
-.mine-level {
-    color: #7f8c8d;
-    font-size: 0.9em;
-}
-
-.mine-stats {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    font-size: 0.9em;
-}
-
-.workers, .production {
-    background: rgba(0,0,0,0.1);
-    padding: 5px 10px;
-    border-radius: 4px;
+    margin-bottom: 14px;
 }
 
 .progress-bar {
     width: 100%;
-    height: 8px;
-    background: #ecf0f1;
-    border-radius: 4px;
-    margin-bottom: 10px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    margin-bottom: 14px;
     overflow: hidden;
 }
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #3498db, #2980b9);
+    background: linear-gradient(90deg, #59c0ff, #588bff);
     transition: width 0.3s ease;
 }
 
-.mine-card.producing .progress-fill {
-    background: linear-gradient(90deg, #3498db, #2980b9);
-}
-
 .mine-card.resting .progress-fill {
-    background: linear-gradient(90deg, #f39c12, #e67e22);
+    background: linear-gradient(90deg, #ffe08a, #ffb347);
 }
 
 .mine-status {
     text-align: center;
-    font-weight: bold;
-    margin-bottom: 10px;
-    font-size: 0.9em;
+    font-weight: 600;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.7);
 }
 
 .mine-actions {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 8px;
 }
 
 .mine-actions button {
-    padding: 8px 12px;
+    padding: 10px 14px;
     border: none;
-    border-radius: 4px;
+    border-radius: 14px;
     cursor: pointer;
-    font-weight: bold;
-    transition: all 0.3s ease;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    color: #0a101d;
+}
+
+.mine-actions button:hover {
+    transform: translateY(-2px);
 }
 
 .hire-worker-btn {
-    background: linear-gradient(45deg, #9b59b6, #8e44ad);
-    color: white;
-}
-
-.hire-worker-btn:hover {
-    background: linear-gradient(45deg, #8e44ad, #7d3c98);
+    background: linear-gradient(120deg, #c3a5ff, #8a77ff);
+    box-shadow: 0 15px 32px rgba(138, 119, 255, 0.35);
 }
 
 .upgrade-mine-btn {
-    background: linear-gradient(45deg, #e74c3c, #c0392b);
-    color: white;
-}
-
-.upgrade-mine-btn:hover {
-    background: linear-gradient(45deg, #c0392b, #a93226);
+    background: linear-gradient(120deg, #ff8fab, #ff5f6d);
+    box-shadow: 0 15px 32px rgba(255, 95, 109, 0.35);
 }
 
 .collect-ore-btn {
-    background: linear-gradient(45deg, #f39c12, #e67e22);
-    color: white;
-}
-
-.collect-ore-btn:hover {
-    background: linear-gradient(45deg, #e67e22, #d35400);
+    background: linear-gradient(120deg, #ffe08a, #ffd369);
+    box-shadow: 0 15px 32px rgba(255, 211, 105, 0.35);
 }
 
 /* Sidebar */
 .sidebar {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 22px;
 }
 
-.inventory, .truck-section, .redeem-section {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 20px;
-    border-radius: 12px;
-    backdrop-filter: blur(10px);
+.inventory,
+.truck-section {
+    background: rgba(8, 13, 26, 0.9);
+    padding: 24px;
+    border-radius: 26px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
 }
 
-.inventory h3, .truck-section h3, .redeem-section h3 {
-    color: #f39c12;
-    margin-bottom: 15px;
+.inventory h3,
+.truck-section h3 {
+    color: #ffe08a;
+    margin-bottom: 18px;
     text-align: center;
+    font-family: 'Antonio', 'Space Grotesk', sans-serif;
+    letter-spacing: 0.04em;
 }
 
 .inventory-item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
     padding: 8px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 600;
 }
 
 .inventory-item:last-child {
@@ -335,55 +407,53 @@
 .empty-truck {
     text-align: center;
     font-style: italic;
-    opacity: 0.75;
-    padding: 10px 0;
+    opacity: 0.7;
+    padding: 14px 10px;
+    border-radius: 16px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
 }
 
 .truck-status {
     text-align: center;
-    font-weight: bold;
-    margin-bottom: 10px;
-    padding: 10px;
-    background: rgba(255,255,255,0.1);
-    border-radius: 6px;
+    font-weight: 700;
+    margin-bottom: 14px;
+    padding: 12px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .truck-cargo {
-    margin-bottom: 15px;
+    margin-bottom: 18px;
 }
 
 .truck-cargo div {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 5px 0;
-}
-
-.empty-truck {
-    border: 1px dashed rgba(255,255,255,0.2);
-    border-radius: 6px;
+    justify-content: space-between;
+    padding: 6px 0;
 }
 
 .truck-actions {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
 }
 
 .truck-btn {
-    background: linear-gradient(45deg, #34495e, #2c3e50);
-    color: white;
     border: none;
-    padding: 10px 15px;
-    border-radius: 6px;
+    border-radius: 16px;
+    padding: 12px 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: linear-gradient(120deg, #7f5dff, #5327ff);
+    color: #f8fafc;
     cursor: pointer;
-    font-weight: bold;
-    transition: all 0.3s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .truck-btn:hover {
-    background: linear-gradient(45deg, #2c3e50, #1a252f);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 18px 32px rgba(83, 39, 255, 0.35);
 }
 
 .redeem-input {

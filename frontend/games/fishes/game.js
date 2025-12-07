@@ -378,14 +378,6 @@ export default class FishesGame {
                             </div>
                             <div class="free-food-status" data-role="free-food-status"></div>
                         </div>
-
-                        <div class="redeem-panel">
-                            <h3>Redeem Code</h3>
-                            <div class="redeem-input-group">
-                                <input type="text" placeholder="Enter code" data-role="redeem-input">
-                                <button data-action="redeem">Redeem</button>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -475,17 +467,6 @@ export default class FishesGame {
             if (action === 'collect-free-food') {
                 event.preventDefault();
                 await this.collectFreeFood();
-                return;
-            }
-
-            if (action === 'redeem') {
-                event.preventDefault();
-                const input = container.querySelector('[data-role="redeem-input"]');
-                const code = input ? input.value.trim() : '';
-                if (code) {
-                    await this.redeemCode(code);
-                    input.value = '';
-                }
                 return;
             }
 
@@ -1489,30 +1470,6 @@ export default class FishesGame {
         } catch (error) {
             console.error('Free food error:', error);
             this.showMessage('Unable to collect free food due to a network error', 'error');
-        }
-    }
-
-    async redeemCode(code) {
-        try {
-            const response = await fetch('/api/fishes/redeem', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: this.username, code })
-            });
-
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({}));
-                this.showMessage(error.error || 'Redeem failed', 'error');
-                return;
-            }
-
-            const data = await response.json();
-            this.syncStateFromPayload(data);
-            this.updateUI();
-            this.showMessage(data.message || 'Code redeemed successfully!', 'success');
-        } catch (error) {
-            console.error('Redeem error:', error);
-            this.showMessage('Redeem failed due to a network error', 'error');
         }
     }
 

@@ -151,11 +151,6 @@ export default class GoldenMineGame {
                             <div class="truck-actions"></div>
                         </div>
 
-                        <div class="redeem-section">
-                            <h3>Redeem Code</h3>
-                            <input type="text" class="redeem-input" placeholder="Enter code">
-                            <button class="redeem-btn">Redeem</button>
-                        </div>
                     </div>
                 </div>
 
@@ -248,17 +243,6 @@ export default class GoldenMineGame {
             collectAllBtn.addEventListener('click', () => this.collectAllReady());
         }
 
-        const redeemBtn = container.querySelector('.redeem-btn');
-        if (redeemBtn) {
-            redeemBtn.addEventListener('click', () => {
-                const input = container.querySelector('.redeem-input');
-                const code = input?.value.trim();
-                if (code) {
-                    this.redeemCode(code);
-                    input.value = '';
-                }
-            });
-        }
     }
 
     startGameLoop() {
@@ -809,36 +793,6 @@ export default class GoldenMineGame {
         } catch (error) {
             console.error('Return truck error:', error);
             this.showMessage('Failed to return truck', 'error');
-        }
-    }
-
-    async redeemCode(code) {
-        try {
-            const username = window.authManager?.currentUser?.username;
-            if (!username) return;
-
-            const response = await fetch('/api/golden-mine/redeem', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, code })
-            });
-
-            const result = await response.json();
-            if (response.ok && result.success) {
-                this.coins = result.newCoins;
-                await this.loadGameData({ silent: true });
-                const reward = Number(result.reward || 0);
-                const message = result.message
-                    ? `Code redeemed: ${result.message}`
-                    : `Code redeemed! Received ${reward.toLocaleString()} coins!`;
-                this.showMessage(message, 'success');
-                return;
-            }
-
-            this.showMessage(result.error || 'Failed to redeem code', 'error');
-        } catch (error) {
-            console.error('Redeem code error:', error);
-            this.showMessage('Failed to redeem code', 'error');
         }
     }
 

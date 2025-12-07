@@ -8,7 +8,6 @@ export default class CatChessGame {
         this.BOARD_WIDTH = 8;
         this.unlockedLevels = [1];
         this.specialInventory = [];
-        this.redeemedCodes = [];
         this.sellBonuses = {};
         this.selectedCatIndex = null;
         this.dragSource = null;
@@ -237,17 +236,6 @@ export default class CatChessGame {
                         <div id="cc-unlocked-levels" class="stat-value">1</div>
                     </div>
                 </div>
-
-                ${this.config?.enableRedeem ? `
-                <div class="redeem-section">
-                    <h3>Redeem Code</h3>
-                    <div class="redeem-input-group">
-                        <input type="text" id="cc-redeem-code" class="redeem-input" placeholder="Enter code">
-                        <button id="cc-redeem-btn" class="redeem-btn">Redeem</button>
-                    </div>
-                </div>
-                ` : ''}
-
                 <!-- Chessboard -->
                 <div class="chessboard-section">
                     <h3>Chessboard</h3>
@@ -1502,10 +1490,6 @@ export default class CatChessGame {
                 return;
             }
 
-            if (e.target.closest('#cc-redeem-btn')) {
-                this.redeemCode();
-                return;
-            }
         });
 
         this.gameContainer.addEventListener('change', (e) => {
@@ -1513,16 +1497,6 @@ export default class CatChessGame {
                 this.updateMergeControlsState();
             }
         });
-
-        const redeemInput = this.gameContainer.querySelector('#cc-redeem-code');
-        if (redeemInput) {
-            redeemInput.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    this.redeemCode();
-                }
-            });
-        }
 
         // Chessboard drag and drop
         const boardEl = this.gameContainer.querySelector('#cc-chessboard');
@@ -1748,46 +1722,6 @@ export default class CatChessGame {
     // Unbind game events
     unbindGameEvents() {
         // Events are bound to elements that will be removed, so no need to unbind
-    }
-
-    async redeemCode() {
-        if (!this.config?.enableRedeem) return;
-
-        const input = this.gameContainer?.querySelector('#cc-redeem-code');
-        if (!input) return;
-
-        const code = input.value.trim().toUpperCase();
-        if (!code) {
-            this.showGameMessage('Please enter a code.', 'error');
-            return;
-        }
-
-        try {
-            const username = this.getCurrentUsername();
-            if (!username) return;
-
-            const response = await fetch('/api/cat-chess/redeem', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, code })
-            });
-
-            const data = await response.json();
-            if (response.ok && data.success) {
-                this.syncStateFromPayload(data);
-                this.updateUI();
-                input.value = '';
-                const message = typeof data.message === 'string' && data.message.trim().length > 0
-                    ? data.message
-                    : 'Code redeemed successfully!';
-                this.showGameMessage(message, 'success');
-            } else {
-                this.showGameMessage(data.error || 'Invalid code.', 'error');
-            }
-        } catch (error) {
-            console.error('Redeem code error:', error);
-            this.showGameMessage('Failed to redeem code.', 'error');
-        }
     }
 
     // Buy cat
@@ -2486,10 +2420,6 @@ export default class CatChessGame {
             } else {
                 this.specialInventory = data.specialInventory.slice();
             }
-        }
-
-        if (Array.isArray(data.redeemedCodes)) {
-            this.redeemedCodes = data.redeemedCodes;
         }
     }
 

@@ -1,0 +1,434 @@
+[
+  {
+    "code": "SKIPTIMER",
+    "description": "Skips the Happy Birds production timer by 6 hours",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "skipTimer",
+    "parameters": {}
+  },
+  {
+    "code": "FREEGREENBIRD",
+    "description": "Adds a free Green Bird",
+    "maxUses": 1000000,
+    "usedCount": 1,
+    "usedBy": [
+      "123"
+    ],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "addBird",
+    "parameters": {
+      "birdType": "green",
+      "quantity": 1
+    }
+  },
+  {
+    "code": "REDBIRD",
+    "description": "Unlocks a Red Bird (1 egg/sec)",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "addBird",
+    "parameters": {
+      "birdType": "red",
+      "quantity": 1
+    }
+  },
+  {
+    "code": "ORANGEBIRD",
+    "description": "Unlocks an Orange Bird (2 eggs/sec)",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "addBird",
+    "parameters": {
+      "birdType": "orange",
+      "quantity": 1
+    }
+  },
+  {
+    "code": "YELLOWBIRD",
+    "description": "Unlocks a Yellow Bird (5 eggs/sec)",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "addBird",
+    "parameters": {
+      "birdType": "yellow",
+      "quantity": 1
+    }
+  },
+  {
+    "code": "GREENBIRD",
+    "description": "Unlocks a Green Bird (10 eggs/sec)",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "addBird",
+    "parameters": {
+      "birdType": "green",
+      "quantity": 1
+    }
+  },
+  {
+    "code": "BLUEBIRD",
+    "description": "Unlocks a Blue Bird (20 eggs/sec)",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "addBird",
+    "parameters": {
+      "birdType": "blue",
+      "quantity": 1
+    }
+  },
+  {
+    "code": "PURPLEBIRD",
+    "description": "Unlocks a Purple Bird (50 eggs/sec)",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "happybirds",
+    "action": "addBird",
+    "parameters": {
+      "birdType": "purple",
+      "quantity": 1
+    }
+  },
+  {
+    "code": "GROWTH",
+    "description": "Adds 5,000 Rich Garden coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "richgarden",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 5000
+    }
+  },
+  {
+    "code": "HARVEST",
+    "description": "Adds 10,000 Rich Garden coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "richgarden",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 10000
+    }
+  },
+  {
+    "code": "PLANTING",
+    "description": "Adds 25,000 Rich Garden coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "richgarden",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 25000
+    }
+  },
+  {
+    "code": "TREES",
+    "description": "Adds 100 Common fruits to inventory",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "richgarden",
+    "action": "addInventory",
+    "parameters": {
+      "treeType": "common",
+      "quantity": 100
+    }
+  },
+  {
+    "code": "SKIPTRUCK",
+    "description": "Instantly resolves the Rich Garden truck",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "richgarden",
+    "action": "skipTruck",
+    "parameters": {
+      "destination": "city"
+    }
+  },
+  {
+    "code": "GOLDENBOOST",
+    "description": "Adds 5,000 Golden Mine coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "goldenmine",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 5000
+    }
+  },
+  {
+    "code": "MINEMASTER",
+    "description": "Adds 10,000 Golden Mine coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "goldenmine",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 10000
+    }
+  },
+  {
+    "code": "OREKING",
+    "description": "Adds 25,000 Golden Mine coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "goldenmine",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 25000
+    }
+  },
+  {
+    "code": "SKIPMINE",
+    "description": "Skips all mine cycles",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "goldenmine",
+    "action": "skipMines",
+    "parameters": {}
+  },
+  {
+    "code": "CATCHESSCOINS",
+    "description": "Adds 50,000 Cat Chess coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 50000
+    }
+  },
+  {
+    "code": "TIER1CAT",
+    "description": "Places a Tier 1 cat on the board",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addCat",
+    "parameters": {
+      "level": 1,
+      "grown": true
+    }
+  },
+  {
+    "code": "TIER2CAT",
+    "description": "Places a Tier 2 cat on the board",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addCat",
+    "parameters": {
+      "level": 11,
+      "grown": true
+    }
+  },
+  {
+    "code": "TIER3CAT",
+    "description": "Places a Tier 3 cat on the board",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addCat",
+    "parameters": {
+      "level": 21,
+      "grown": true
+    }
+  },
+  {
+    "code": "TIER4CAT",
+    "description": "Places a Tier 4 cat on the board",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addCat",
+    "parameters": {
+      "level": 31,
+      "grown": true
+    }
+  },
+  {
+    "code": "TIER5CAT",
+    "description": "Places a Tier 5 cat on the board",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addCat",
+    "parameters": {
+      "level": 41,
+      "grown": true
+    }
+  },
+  {
+    "code": "TIER6CAT",
+    "description": "Places a Tier 6 cat on the board",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addCat",
+    "parameters": {
+      "level": 51,
+      "grown": true
+    }
+  },
+  {
+    "code": "SPECIALPURR",
+    "description": "Adds 15 special coins in Cat Chess",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "catchess",
+    "action": "addSpecialCurrency",
+    "parameters": {
+      "amount": 15
+    }
+  },
+  {
+    "code": "FISHFEAST",
+    "description": "Adds 25 fish food",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "fishes",
+    "action": "addFood",
+    "parameters": {
+      "quantity": 25
+    }
+  },
+  {
+    "code": "DEEPSEAWEALTH",
+    "description": "Adds 20,000 aquarium coins",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "fishes",
+    "action": "addCoins",
+    "parameters": {
+      "amount": 20000
+    }
+  },
+  {
+    "code": "RESTOCKNOW",
+    "description": "Immediately restocks the fish shop",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "fishes",
+    "action": "restockShop",
+    "parameters": {}
+  },
+  {
+    "code": "COOLCURRENT",
+    "description": "Clears all fish feeding cooldowns",
+    "maxUses": 1000000,
+    "usedCount": 0,
+    "usedBy": [],
+    "activeFrom": "2024-01-01T00:00:00.000Z",
+    "activeUntil": null,
+    "game": "fishes",
+    "action": "clearCooldowns",
+    "parameters": {}
+  },
+  {
+    "code": "BILLION",
+    "description": "Adds 10,000,000,000 coins to every game for the first 10 players",
+    "maxUses": 10,
+    "usedCount": 3,
+    "usedBy": [
+      "zxc",
+      "qwe",
+      "1212"
+    ],
+    "activeFrom": null,
+    "activeUntil": null,
+    "game": "global",
+    "action": "addCoinsAllGames",
+    "parameters": {
+      "amount": 10000000000
+    }
+  }
+]

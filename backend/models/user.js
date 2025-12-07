@@ -50,7 +50,6 @@ const richGardenProgressSchema = new mongoose.Schema({
   totalFruitsCollected: { type: Number, default: 0 },
   totalCoinsEarned: { type: Number, default: 0 },
   highestGardenLevel: { type: Number, default: 1 },
-  redeemedCodes: { type: [String], default: [] },
   lastPlayed: { type: Date, default: Date.now },
   playTime: { type: Number, default: 0 }
 }, { _id: false });
@@ -84,7 +83,6 @@ const goldenMineProgressSchema = new mongoose.Schema({
   totalMinesOwned: { type: Number, default: 0 },
   totalOreMined: { type: Number, default: 0 },
   totalCoinsEarned: { type: Number, default: 0 },
-  redeemedCodes: { type: [String], default: [] },
   lastPlayed: { type: Date, default: Date.now },
   playTime: { type: Number, default: 0 }
 }, { _id: false });
@@ -115,7 +113,6 @@ const catChessProgressSchema = new mongoose.Schema({
   board: { type: [catChessBoardCellSchema], default: () => Array(64).fill(null) },
   unlockedLevels: { type: [Number], default: () => [1] },
   specialInventory: { type: [catChessSpecialInventorySchema], default: () => [] },
-  redeemedCodes: { type: [String], default: [] },
   lastPlayed: { type: Date, default: Date.now },
   playTime: { type: Number, default: 0 },
   starterGranted: { type: Boolean, default: true },
@@ -145,8 +142,7 @@ const fishesProgressSchema = new mongoose.Schema({
     default: () => new Map()
   },
   shopRestockAt: { type: Date, default: null },
-  lastFreeFoodAt: { type: Date, default: null },
-  redeemedCodes: { type: [String], default: [] }
+  lastFreeFoodAt: { type: Date, default: null }
 }, { _id: false });
 
 function createDefaultFishesProgress() {
@@ -169,8 +165,7 @@ function createDefaultFishesProgress() {
     ],
     shopPurchases: new Map(),
     shopRestockAt: null,
-    lastFreeFoodAt: null,
-    redeemedCodes: []
+    lastFreeFoodAt: null
   };
 }
 
@@ -261,7 +256,6 @@ const userSchema = new mongoose.Schema({
   productionStart: { type: Date, default: null },
   lastSaveTime: { type: Date, default: null },
   savedProduced: { type: eggSchema, default: () => ({}) },
-  redeemedCodes: { type: [String], default: [] },
   
   // Truck system
   truckLocation: { type: String, enum: ['farm', 'traveling_to_city', 'city', 'traveling_to_farm'], default: 'farm' },
@@ -328,7 +322,6 @@ const userSchema = new mongoose.Schema({
       totalFruitsCollected: 0,
       totalCoinsEarned: 0,
       highestGardenLevel: 1,
-      redeemedCodes: [],
       lastPlayed: new Date(),
       playTime: 0
     })
@@ -347,7 +340,6 @@ const userSchema = new mongoose.Schema({
       totalMinesOwned: 0,
       totalOreMined: 0,
       totalCoinsEarned: 0,
-      redeemedCodes: [],
       lastPlayed: new Date(),
       playTime: 0
     })
@@ -362,7 +354,6 @@ const userSchema = new mongoose.Schema({
       board: Array(64).fill(null),
       unlockedLevels: [1],
       specialInventory: [],
-      redeemedCodes: [],
       lastPlayed: new Date(),
       playTime: 0
     })

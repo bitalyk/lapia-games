@@ -13,16 +13,6 @@ const BIRDS = {
   purple: { cost: 500000, eps: 50, eggsPerCoin: 10,  label: "Purple" },
 };
 
-const CODES = {
-  REDBIRD: "red",
-  ORANGEBIRD: "orange", 
-  YELLOWBIRD: "yellow",
-  GREENBIRD: "green",
-  BLUEBIRD: "blue",
-  PURPLEBIRD: "purple",
-  SKIPTIMER: "skip_timer"
-};
-
 const SIX_HOURS_SEC = process.env.FAST_MODE === 'true' ? 30 : 6 * 60 * 60; // 30s testing / 6h normal
 const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 * 1000 : 60 * 60 * 1000; // 10s testing / 1h normal
 
@@ -326,64 +316,6 @@ router.post("/buy", async (req, res) => {
     });
   } catch (err) {
     console.error("Buy error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// POST /api/game/redeem
-router.post("/redeem", async (req, res) => {
-  try {
-    const { username, code } = req.body;
-    const user = await getUser(username);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    if (user.redeemedCodes.includes(code)) {
-      return res.status(400).json({ error: "Code already redeemed" });
-    }
-
-    const bird = CODES[code.toUpperCase()];
-    if (!bird) {
-      return res.status(400).json({ error: "Invalid code" });
-    }
-
-    if (bird === "skip_timer") {
-      // Set production as if it started 6 hours ago
-      user.productionStart = new Date(Date.now() - SIX_HOURS_SEC * 1000);
-      user.lastSaveTime = new Date(Date.now() - SIX_HOURS_SEC * 1000);
-      user.savedProduced = {};
-
-      // Calculate what would have been produced in 6 hours
-      for (const color of Object.keys(BIRDS)) {
-        const count = user.birds[color] || 0;
-        if (count > 0) {
-          user.savedProduced[color] = Math.floor(count * BIRDS[color].eps * SIX_HOURS_SEC);
-        }
-      }
-    } else {
-      // Save current progress before redeeming bird to minimize free eggs
-      if (user.lastSaveTime) {
-        const { produced } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
-        user.savedProduced = produced;
-        user.lastSaveTime = new Date();
-      }
-
-      user.birds[bird] = (user.birds[bird] || 0) + 1;
-    }
-
-    user.redeemedCodes.push(code);
-    await user.save();
-
-    res.json({ 
-      success: true, 
-      birds: user.birds, 
-      productionStart: user.productionStart,
-      savedProduced: user.savedProduced,
-      lastSaveTime: user.lastSaveTime
-    });
-  } catch (err) {
-    console.error("Redeem error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });

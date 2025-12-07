@@ -48,6 +48,42 @@
             </div>
         </div>
 
+        <!-- Promo Hub -->
+        <section class="promo-center">
+            <div class="promo-card">
+                <div class="promo-header">
+                    <div class="promo-title">
+                        <p class="promo-kicker">Promo Hub</p>
+                        <h3>Redeem Once, Reward Everywhere</h3>
+                        <p>All Happy Birds, Rich Garden, Golden Mine, Cat Chess, and Fishes promos now live here.</p>
+                    </div>
+                    <button id="platform-promo-history-btn" class="promo-history-btn" type="button" aria-expanded="false">
+                        View History
+                    </button>
+                </div>
+                <div class="promo-input-row">
+                    <input type="text" id="platform-promo-code" placeholder="Enter promo code (e.g., BILLION)" aria-label="Promo code">
+                    <button id="platform-promo-redeem-btn" type="button">Redeem</button>
+                </div>
+                <p class="promo-hint">Codes are case-insensitive. Each one applies instantly to its game or globally.</p>
+            </div>
+        </section>
+
+        <div id="platform-promo-history-modal" class="promo-history-modal" aria-hidden="true">
+            <div class="promo-history-dialog" role="dialog" aria-modal="true" aria-labelledby="promo-history-title" tabindex="-1">
+                <div class="promo-history-header">
+                    <div>
+                        <p class="promo-history-label">Recent rewards</p>
+                        <h3 id="promo-history-title">Promo History</h3>
+                    </div>
+                    <button class="promo-history-close" type="button" data-action="close-promo-history" aria-label="Close history view">&times;</button>
+                </div>
+                <div class="promo-history-body">
+                    <ul id="platform-promo-history-list" class="redeem-history-list"></ul>
+                </div>
+            </div>
+        </div>
+
         <!-- Игры -->
         <div class="games-section">
             <h2>🎮 Available Games</h2>

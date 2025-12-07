@@ -285,7 +285,6 @@ router.get('/status/:username', async (req, res) => {
                 totalFruitsCollected: 0,
                 totalCoinsEarned: 0,
                 highestGardenLevel: 1,
-                redeemedCodes: [],
                 lastPlayed: now,
                 playTime: 0
             };
@@ -725,89 +724,6 @@ router.post('/return_truck', async (req, res) => {
 
     } catch (error) {
         console.error('Return truck error:', error);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Redeem code
-router.post('/redeem', async (req, res) => {
-    try {
-        const { username, code } = req.body;
-
-        const user = await User.findOne({ username });
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        const rgData = user.richGardenProgress;
-        if (!rgData) {
-            return res.status(400).json({ error: 'Rich Garden data not initialized' });
-        }
-
-        const upperCode = code.toUpperCase();
-
-        // Initialize redeemed codes if not exists
-        if (!rgData.redeemedCodes) rgData.redeemedCodes = [];
-
-        if (rgData.redeemedCodes.includes(upperCode)) {
-            return res.status(400).json({ error: 'Code already redeemed' });
-        }
-
-        let message = '';
-        let coinsAdded = 0;
-
-        switch (upperCode) {
-            case 'GROWTH':
-                coinsAdded = 5000;
-                message = 'Growth bonus: +5000 coins!';
-                break;
-            case 'HARVEST':
-                coinsAdded = 10000;
-                message = 'Harvest bonus: +10000 coins!';
-                break;
-            case 'PLANTING':
-                coinsAdded = 25000;
-                message = 'Planting bonus: +25000 coins!';
-                break;
-            case 'TREES':
-                // Add some fruits to inventory
-                if (!rgData.inventory.common) rgData.inventory.common = 0;
-                rgData.inventory.common += 100;
-                message = 'Tree bonus: +100 Common fruits!';
-                break;
-            case 'SKIPTRUCK':
-                // Skip truck travel time
-                if (rgData.truckLocation === 'traveling_to_city') {
-                    rgData.truckLocation = 'city';
-                    rgData.truckDepartureTime = null;
-                    message = 'Truck travel skipped! Arrived at city instantly!';
-                } else if (rgData.truckLocation === 'traveling_to_farm') {
-                    rgData.truckLocation = 'farm';
-                    rgData.truckDepartureTime = null;
-                    message = 'Truck travel skipped! Arrived at farm instantly!';
-                } else {
-                    message = 'Truck is not traveling - no travel to skip!';
-                }
-                break;
-            default:
-                return res.status(400).json({ error: 'Invalid code' });
-        }
-
-        rgData.coins += coinsAdded;
-        rgData.redeemedCodes.push(upperCode);
-
-        user.markModified('richGardenProgress');
-        await user.save();
-
-        return res.json(
-            buildGamePayload(rgData, {
-                now: new Date(),
-                extras: { message }
-            })
-        );
-
-    } catch (error) {
-        console.error('Redeem error:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });

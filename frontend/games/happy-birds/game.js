@@ -611,17 +611,6 @@ export default class HappyBirdsGame {
                     </div>
                 </div>
 
-                ${this.config.enableRedeem ? `
-                <!-- Redeem Bar -->
-                <div class="redeem-section">
-                    <h3>Redeem Code</h3>
-                    <div class="redeem-input-group">
-                        <input type="text" id="hb-redeem-code" placeholder="Enter code (e.g., SKIPTIMER)" class="redeem-input">
-                        <button id="hb-redeem-btn" class="redeem-btn">Redeem</button>
-                    </div>
-                </div>
-                ` : ''}
-
                 <!-- Управление -->
                 <div class="game-controls">
                     <button id="hb-collect-btn" class="control-btn collect">Collect Eggs</button>
@@ -919,16 +908,6 @@ export default class HappyBirdsGame {
             });
         }
 
-        // Only bind redeem events if feature is enabled
-        if (this.config.enableRedeem) {
-            const redeemBtn = document.getElementById('hb-redeem-btn');
-            if (redeemBtn) {
-                redeemBtn.addEventListener('click', () => {
-                    this.redeemCode();
-                });
-            }
-        }
-
         // Delegate events for dynamic buttons
         const birdsGrid = document.getElementById('hb-birds-grid');
         if (birdsGrid) {
@@ -955,55 +934,6 @@ export default class HappyBirdsGame {
                     }
                 }
             });
-        }
-    }
-
-    // Redeem code
-    async redeemCode() {
-        const codeInput = document.getElementById('hb-redeem-code');
-        if (!codeInput) return;
-
-        const code = codeInput.value.trim().toUpperCase();
-        if (!code) {
-            this.showGameMessage('Please enter a code!', 'error');
-            return;
-        }
-
-        try {
-            const username = window.authManager?.currentUser?.username;
-            if (!username) {
-                this.showGameMessage('Please log in to redeem codes', 'error');
-                return;
-            }
-
-            const response = await fetch('/api/game/redeem', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, code })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                // Update game state based on what was redeemed
-                if (data.coins !== undefined) this.coins = data.coins;
-                if (data.birds) this.birds = data.birds;
-                if (data.eggs) this.eggs = data.eggs;
-                if (data.savedProduced) this.savedProduced = data.savedProduced;
-                if (data.lastSaveTime) this.lastSaveTime = new Date(data.lastSaveTime);
-                if (data.productionStart) this.productionStart = new Date(data.productionStart);
-
-                // Recalculate produced
-                this.updateProduced();
-                this.updateUI();
-                this.showGameMessage(`Code redeemed successfully! ${data.message || ''}`, 'success');
-                codeInput.value = ''; // Clear input
-            } else {
-                this.showGameMessage(data.error || 'Failed to redeem code', 'error');
-            }
-        } catch (error) {
-            console.error('Redeem error:', error);
-            this.showGameMessage('Failed to redeem code', 'error');
         }
     }
 

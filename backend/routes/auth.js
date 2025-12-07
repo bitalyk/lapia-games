@@ -45,7 +45,6 @@ router.post("/register", async (req, res) => {
         board: Array(64).fill(null),
         unlockedLevels: [1],
         specialInventory: [],
-        redeemedCodes: [],
         lastPlayed: new Date(),
         playTime: 0
       }

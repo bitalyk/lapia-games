@@ -108,7 +108,6 @@ router.get('/status/:username', async (req, res) => {
                 totalMinesOwned: 0,
                 totalOreMined: 0,
                 totalCoinsEarned: 0,
-                redeemedCodes: [],
                 lastPlayed: new Date(),
                 playTime: 0
             };
@@ -178,8 +177,7 @@ router.get('/status/:username', async (req, res) => {
             ),
             totalMinesOwned: user.goldenMineProgress.totalMinesOwned,
             totalOreMined: user.goldenMineProgress.totalOreMined,
-            totalCoinsEarned: user.goldenMineProgress.totalCoinsEarned,
-            redeemedCodes: user.goldenMineProgress.redeemedCodes
+            totalCoinsEarned: user.goldenMineProgress.totalCoinsEarned
         });
 
     } catch (error) {
@@ -521,79 +519,6 @@ router.post('/return_truck', async (req, res) => {
 
     } catch (error) {
         console.error('Error returning truck:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-// Redeem code
-router.post('/redeem', async (req, res) => {
-    try {
-        const { username, code } = req.body;
-
-        const user = await User.findOne({ username });
-        if (!user || !user.goldenMineProgress) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        if (user.goldenMineProgress.redeemedCodes.includes(code)) {
-            return res.status(400).json({ error: 'Code already redeemed' });
-        }
-
-        // Simple redeem logic - add coins for valid codes
-        let reward = 0;
-        if (code === 'GOLDENBOOST') {
-            reward = 5000;
-        } else if (code === 'MINEMASTER') {
-            reward = 10000;
-        } else if (code === 'OREKING') {
-            reward = 25000;
-        } else if (code === 'SKIPMINE') {
-            // Skip all mine production/rest cycles
-            user.goldenMineProgress.mines.forEach((mine, index) => {
-                if (!mine) return;
-
-                if (mine.state === 'producing') {
-                    // Complete production immediately
-                    mine.state = 'ready';
-                    mine.oreProduced = mine.workers * MINE_TYPES[mine.type].orePerSecond * PRODUCTION_TIME;
-                    mine.timeLeft = 0;
-                    mine.lastStateChange = new Date();
-                } else if (mine.state === 'resting') {
-                    // Complete rest immediately
-                    mine.state = 'producing';
-                    mine.timeLeft = PRODUCTION_TIME;
-                    mine.lastStateChange = new Date();
-                }
-            });
-        } else {
-            return res.status(400).json({ error: 'Invalid code' });
-        }
-
-        // Add coins for reward codes (but not for SKIPMINE which modifies mines directly)
-        if (code !== 'SKIPMINE') {
-            user.goldenMineProgress.coins += reward;
-        }
-
-        user.goldenMineProgress.redeemedCodes.push(code);
-
-        await user.save();
-
-        if (code === 'SKIPMINE') {
-            res.json({
-                success: true,
-                message: 'All mine cycles skipped!',
-                newCoins: user.goldenMineProgress.coins
-            });
-        } else {
-            res.json({
-                success: true,
-                reward: reward,
-                newCoins: user.goldenMineProgress.coins
-            });
-        }
-
-    } catch (error) {
-        console.error('Error redeeming code:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

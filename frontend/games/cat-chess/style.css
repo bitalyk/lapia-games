@@ -505,60 +505,6 @@
     color: #facc15;
     font-weight: 600;
 }
-
-.redeem-section {
-    margin: 20px 0;
-    padding: 16px;
-    background: rgba(15, 23, 42, 0.9);
-    border-radius: 12px;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.35);
-}
-
-.redeem-section h3 {
-    margin: 0 0 10px 0;
-    color: #e2e8f0;
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-.redeem-input-group {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.redeem-input {
-    flex: 1 1 220px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    background: rgba(15, 23, 42, 0.6);
-    color: #e2e8f0;
-}
-
-.redeem-input:focus {
-    outline: none;
-    border-color: #38bdf8;
-    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
-}
-
-.redeem-btn {
-    padding: 10px 18px;
-    background: linear-gradient(135deg, #38bdf8, #6366f1);
-    color: #0f172a;
-    border: none;
-    border-radius: 8px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.redeem-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 12px 24px rgba(99, 102, 241, 0.35);
-}
-
 .confirm-modal {
     position: fixed;
     inset: 0;

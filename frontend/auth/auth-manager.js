@@ -11,6 +11,8 @@ const ACHIEVEMENT_CATALOG = [
     { key: 'friendInviter', name: 'Friend Inviter', description: 'Invite 5 friends to the platform.', reward: 1, type: 'social', inviteCount: 5 }
 ];
 
+const ACHIEVEMENT_KEY_SET = new Set(ACHIEVEMENT_CATALOG.map((definition) => definition.key));
+
 const GAME_PROGRESS_CONFIG = [
     { id: 'happy-birds', statusKey: 'happyBirds', label: 'Happy Birds', icon: '🐦' },
     { id: 'rich-garden', statusKey: 'richGarden', label: 'Rich Garden', icon: '🌳' },
@@ -34,6 +36,7 @@ export class AuthManager {
         this.achievementModalRefreshTimer = null;
         this.liveAchievementUpdateInFlight = false;
         this.API_BASE = "http://localhost:3000/api";
+        this.promoWidget = null;
         this.init();
     }
 
@@ -462,28 +465,33 @@ export class AuthManager {
     }
 
     updateAchievementUI() {
+        const snapshot = this.getAchievementSnapshot();
         const status = this.achievementStatus;
+
         const lpaDisplay = document.getElementById('lpa-balance');
         if (lpaDisplay) {
-            const balance = status ? status.lpaBalance || 0 : (this.currentUser?.lpaBalance || 0);
+            const balance = typeof snapshot?.lpaBalance === 'number'
+                ? snapshot.lpaBalance
+                : (status ? status.lpaBalance || 0 : (this.currentUser?.lpaBalance || 0));
             lpaDisplay.textContent = `💎 LPA Coins: ${balance}`;
         }
 
         const achievementCountEl = document.getElementById('achievement-count');
         if (achievementCountEl) {
-            const unlocked = (status && typeof status.unlockedCount === 'number')
-                ? status.unlockedCount
+            const unlocked = typeof snapshot?.unlockedCount === 'number'
+                ? snapshot.unlockedCount
                 : Object.values(this.currentUser?.achievementProgress || {}).filter(Boolean).length;
-            const total = (status && typeof status.totalAchievements === 'number')
-                ? status.totalAchievements
+            const total = typeof snapshot?.totalAchievements === 'number'
+                ? snapshot.totalAchievements
                 : Object.keys(this.currentUser?.achievementProgress || {}).length;
             achievementCountEl.textContent = `🏆 Achievements: ${unlocked}/${total || 0}`;
         }
 
         const streakEl = document.getElementById('activity-streak');
         if (streakEl) {
-            const streak = status?.activityStreak?.currentStreak || this.currentUser?.activityStreak?.currentStreak || 0;
-            streakEl.textContent = `🔥 Streak: ${streak} ${streak === 1 ? 'day' : 'days'}`;
+            const rawStreak = snapshot?.streak?.currentStreak || 0;
+            const normalizedStreak = this.isLoggedIn ? Math.max(1, rawStreak) : rawStreak;
+            streakEl.textContent = `🔥 Streak: ${normalizedStreak} ${normalizedStreak === 1 ? 'day' : 'days'}`;
         }
 
         if (this.isAchievementModalOpen) {
@@ -551,16 +559,28 @@ export class AuthManager {
         const currency = { ...((status && status.currencyByGame) || profile.currencyByGame || {}) };
         const streak = (status && status.activityStreak) || profile.activityStreak || {};
         const friendInvites = (status && status.friendInvites) || profile.friendInvites || {};
-        const historyKeys = new Set((status?.achievementHistory || []).map((entry) => entry.key));
-        const progress = { ...baseProgress };
-        historyKeys.forEach((key) => {
-            progress[key] = true;
+        const historyKeys = new Set((status?.achievementHistory || []).map((entry) => entry?.key).filter(Boolean));
+        const progress = {};
+        ACHIEVEMENT_KEY_SET.forEach((key) => {
+            progress[key] = Boolean(baseProgress[key]);
         });
-        const totalAchievements = status?.totalAchievements || ACHIEVEMENT_CATALOG.length;
-        const fallbackUnlocked = Object.values(progress).filter(Boolean).length;
-        const unlockedCount = typeof status?.unlockedCount === 'number' ? status.unlockedCount : fallbackUnlocked;
+        historyKeys.forEach((key) => {
+            if (ACHIEVEMENT_KEY_SET.has(key)) {
+                progress[key] = true;
+            }
+        });
+        const totalAchievements = ACHIEVEMENT_KEY_SET.size;
+        const unlockedCount = ACHIEVEMENT_CATALOG.reduce((count, definition) => (
+            progress[definition.key] ? count + 1 : count
+        ), 0);
         const lpaBalance = typeof status?.lpaBalance === 'number' ? status.lpaBalance : (profile.lpaBalance || 0);
         const conversionCapacity = typeof status?.conversionCapacity === 'number' ? status.conversionCapacity : 0;
+        const rawStreak = Number(streak?.currentStreak) || 0;
+        const normalizedStreak = this.isLoggedIn ? Math.max(1, rawStreak) : rawStreak;
+        const normalizedStreakData = {
+            ...streak,
+            currentStreak: normalizedStreak
+        };
         const currencyValues = GAME_PROGRESS_CONFIG.map((game) => {
             const statusKey = game.statusKey;
             const progressKey = `${statusKey}Progress`;
@@ -582,7 +602,7 @@ export class AuthManager {
             status,
             progress,
             currency,
-            streak,
+            streak: normalizedStreakData,
             friendInvites,
             totalAchievements,
             unlockedCount,
@@ -1341,8 +1361,103 @@ export class AuthManager {
         
         // ✅ Перепривязываем события с правильным контекстом
         this.bindMenuEvents();
+        this.setupPromoCenter();
         
         console.log('🎮 Game menu initialized');
+    }
+
+    setupPromoCenter() {
+        const inputSelector = '#platform-promo-code';
+        const buttonSelector = '#platform-promo-redeem-btn';
+        const historySelector = '#platform-promo-history-list';
+        const hasElements = document.querySelector(inputSelector)
+            && document.querySelector(buttonSelector)
+            && document.querySelector(historySelector);
+
+        if (!hasElements || typeof window.PromoRedeemWidget !== 'function') {
+            return;
+        }
+
+        this.promoWidget = new window.PromoRedeemWidget({
+            gameId: '',
+            inputSelector,
+            buttonSelector,
+            historySelector,
+            historyLimit: 10,
+            onResult: (data) => {
+                const message = data?.message || 'Promo applied!';
+                window.toastManager?.show(message, 'success');
+            },
+            onError: (message) => {
+                window.toastManager?.show(message, 'error');
+            }
+        });
+
+        this.promoWidget.init();
+
+        const historyModal = document.getElementById('platform-promo-history-modal');
+        const historyToggle = document.getElementById('platform-promo-history-btn');
+        const historyDialog = historyModal?.querySelector('.promo-history-dialog');
+        const closeButtons = historyModal ? Array.from(historyModal.querySelectorAll('[data-action="close-promo-history"]')) : [];
+
+        const removeHistoryKeyHandler = () => {
+            if (this.promoHistoryKeyHandler) {
+                document.removeEventListener('keydown', this.promoHistoryKeyHandler);
+                this.promoHistoryKeyHandler = null;
+            }
+        };
+
+        const closeHistoryModal = () => {
+            if (!historyModal) return;
+            historyModal.classList.remove('open');
+            historyModal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('modal-open');
+            historyToggle?.setAttribute('aria-expanded', 'false');
+            removeHistoryKeyHandler();
+            historyToggle?.focus();
+        };
+
+        const openHistoryModal = () => {
+            if (!historyModal) return;
+            historyModal.classList.add('open');
+            historyModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            historyToggle?.setAttribute('aria-expanded', 'true');
+            this.promoWidget?.loadHistory();
+
+            requestAnimationFrame(() => {
+                historyDialog?.focus();
+            });
+
+            removeHistoryKeyHandler();
+            this.promoHistoryKeyHandler = (event) => {
+                if (event.key === 'Escape') {
+                    closeHistoryModal();
+                }
+            };
+            document.addEventListener('keydown', this.promoHistoryKeyHandler);
+        };
+
+        if (historyToggle && historyModal) {
+            historyToggle.setAttribute('aria-expanded', 'false');
+            historyToggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                openHistoryModal();
+            });
+
+            closeButtons.forEach((btn) => {
+                btn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    closeHistoryModal();
+                });
+            });
+
+            historyModal.addEventListener('click', (event) => {
+                if (event.target === historyModal) {
+                    closeHistoryModal();
+                }
+            });
+        }
     }
 
     // ✅ ОБНОВЛЕННЫЙ: Привязка событий меню

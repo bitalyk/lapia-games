@@ -146,17 +146,6 @@ export default class RichGardenGame {
                     <button id="rg-return-truck-btn" class="control-btn truck">Return Truck</button>
                 </div>
 
-                <!-- Redeem Bar -->
-                ${this.config?.enableRedeem ? `
-                <div class="redeem-section">
-                    <h3>Redeem Code</h3>
-                    <div class="redeem-input-group">
-                        <input type="text" id="rg-redeem-code" placeholder="Enter code" class="redeem-input">
-                        <button id="rg-redeem-btn" class="redeem-btn">Redeem</button>
-                    </div>
-                </div>
-                ` : ''}
-
                 <!-- Messages -->
                 <div id="rg-messages" class="game-messages"></div>
             </div>
@@ -395,16 +384,6 @@ export default class RichGardenGame {
             returnTruckBtn.addEventListener('click', () => {
                 this.returnTruckToFarm();
             });
-        }
-
-        // Only bind redeem events if feature is enabled
-        if (this.config?.enableRedeem) {
-            const redeemBtn = document.getElementById('rg-redeem-btn');
-            if (redeemBtn) {
-                redeemBtn.addEventListener('click', () => {
-                    this.redeemCode();
-                });
-            }
         }
 
         // Delegate events for garden grid
@@ -1001,42 +980,6 @@ export default class RichGardenGame {
         } catch (error) {
             console.error('Return truck error:', error);
             this.showGameMessage('Failed to return truck', 'error');
-        }
-    }
-
-    async redeemCode() {
-        const codeInput = document.getElementById('rg-redeem-code');
-        if (!codeInput) return;
-
-        const code = codeInput.value.trim().toUpperCase();
-        if (!code) {
-            this.showGameMessage('Please enter a code!', 'error');
-            return;
-        }
-
-        try {
-            const username = window.authManager?.currentUser?.username;
-            if (!username) return;
-
-            const response = await fetch('/api/rich-garden/redeem', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, code })
-            });
-
-            const data = await response.json();
-            if (data.success) {
-                this.syncStateFromPayload(data);
-                this.updateUI();
-                this.showGameMessage(`Code redeemed: ${data.message}`, 'success');
-                codeInput.value = '';
-                setTimeout(() => this.refreshGameStatus(), 1000);
-            } else {
-                this.showGameMessage(data.error || 'Invalid code', 'error');
-            }
-        } catch (error) {
-            console.error('Redeem error:', error);
-            this.showGameMessage('Failed to redeem code', 'error');
         }
     }
 

@@ -17,6 +17,7 @@ import goldenMineRoutes from "./routes/golden-mine.js";
 import catChessRoutes from "./routes/cat-chess.js";
 import fishesRoutes from "./routes/fishes.js";
 import achievementsRoutes from "./routes/achievements.js";
+import promoCodeRoutes from "./routes/promo-codes.js";
 
 // Mine configuration for progress saving
 const MINE_TYPES = {
@@ -195,6 +196,10 @@ console.log('🐱 Cat Chess API available at /api/cat-chess');
 // Подключаем роуты Fishes
 app.use("/api/fishes", fishesRoutes);
 console.log('🐟 Fishes API available at /api/fishes');
+
+// Promo codes system
+app.use("/api/promo", promoCodeRoutes);
+console.log('🎁 Promo API available at /api/promo');
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

@@ -82,27 +82,6 @@ const FISH_TYPES = {
 
 const FISH_TYPE_KEYS = Object.keys(FISH_TYPES);
 
-const FISHES_REDEEM_CODES = {
-	FISHFEAST: {
-		type: 'food',
-		amount: 25,
-		message: 'A generous feast arrived: +25 food!'
-	},
-	DEEPSEAWEALTH: {
-		type: 'coins',
-		amount: 20000,
-		message: 'Hidden treasure discovered: +20,000 coins!'
-	},
-	RESTOCKNOW: {
-		type: 'restock',
-		message: 'Shop shipments delivered instantly!'
-	},
-	COOLCURRENT: {
-		type: 'cooldown',
-		message: 'Cool waters refresh the aquarium: all cooldowns cleared!'
-	}
-};
-
 function getFishConfig(type) {
 	return FISH_TYPES[type] || null;
 }
@@ -350,8 +329,7 @@ function ensureFishesProgress(user) {
 			fishes: [createFish('little')],
 			shopPurchases: new Map(),
 			shopRestockAt: new Date(Date.now() + SHOP_RESTOCK_SEC * 1000),
-			lastFreeFoodAt: null,
-			redeemedCodes: []
+			lastFreeFoodAt: null
 		};
 		return true;
 	}
@@ -419,10 +397,6 @@ function ensureFishesProgress(user) {
 		progress.lastFreeFoodAt = new Date(progress.lastFreeFoodAt);
 	}
 
-	if (!Array.isArray(progress.redeemedCodes)) {
-		progress.redeemedCodes = [];
-		modified = true;
-	}
 
 	return modified;
 }
@@ -1039,78 +1013,6 @@ router.post('/collect_free_food', async (req, res) => {
 		}));
 	} catch (error) {
 		console.error('Fishes free food error:', error);
-		return res.status(500).json({ error: 'Server error' });
-	}
-});
-
-// Redeem code
-router.post('/redeem', async (req, res) => {
-	try {
-		if (process.env.ENABLE_REDEEM !== 'true') {
-			return res.status(403).json({ error: 'Redeem system is disabled.' });
-		}
-
-		const { username, code } = req.body;
-		if (!username || !code) {
-			return res.status(400).json({ error: 'Missing username or code' });
-		}
-
-		const normalizedCode = String(code).trim().toUpperCase();
-		const definition = FISHES_REDEEM_CODES[normalizedCode];
-		if (!definition) {
-			return res.status(404).json({ error: 'Invalid redeem code.' });
-		}
-
-		const user = await getUser(username);
-		if (!user) {
-			return res.status(404).json({ error: 'User not found' });
-		}
-
-		const now = new Date();
-		ensureFishesProgress(user);
-		applyShopRestock(user.fishesProgress, now);
-		refreshFishCooldowns(user.fishesProgress, now);
-
-		const progress = user.fishesProgress;
-
-		if (progress.redeemedCodes.includes(normalizedCode)) {
-			return res.status(400).json({ error: 'Code has already been redeemed.' });
-		}
-
-		switch (definition.type) {
-			case 'food':
-				progress.food += definition.amount;
-				break;
-			case 'coins':
-				progress.coins += definition.amount;
-				break;
-			case 'restock':
-				progress.shopPurchases = new Map();
-				progress.shopRestockAt = new Date(now.getTime() + SHOP_RESTOCK_SEC * 1000);
-				break;
-			case 'cooldown':
-				for (const fish of progress.fishes) {
-					fish.cooldownEndsAt = null;
-				}
-				break;
-			default:
-				break;
-		}
-
-		progress.redeemedCodes.push(normalizedCode);
-
-		user.markModified('fishesProgress');
-		await user.save();
-
-		return res.json(buildStatusPayload(progress, {
-			now,
-			extra: {
-				message: definition.message,
-				redeemedCode: normalizedCode
-			}
-		}));
-	} catch (error) {
-		console.error('Fishes redeem error:', error);
 		return res.status(500).json({ error: 'Server error' });
 	}
 });

@@ -104,49 +104,6 @@ const SPECIAL_COLLECTION_MULTIPLIERS = {
   golden: 2.0
 };
 
-const CAT_CHESS_REDEEM_CODES = {
-  CATCHESSCOINS: {
-    type: 'coins',
-    amount: 50000,
-    message: 'Treasure chest opened: +50,000 coins!'
-  },
-  TIER1CAT: {
-    type: 'cat',
-    level: 1,
-    tierName: 'Tier 1'
-  },
-  TIER2CAT: {
-    type: 'cat',
-    level: 11,
-    tierName: 'Tier 2'
-  },
-  TIER3CAT: {
-    type: 'cat',
-    level: 21,
-    tierName: 'Tier 3'
-  },
-  TIER4CAT: {
-    type: 'cat',
-    level: 31,
-    tierName: 'Tier 4'
-  },
-  TIER5CAT: {
-    type: 'cat',
-    level: 41,
-    tierName: 'Tier 5'
-  },
-  TIER6CAT: {
-    type: 'cat',
-    level: 51,
-    tierName: 'Tier 6'
-  },
-  SPECIALPURR: {
-    type: 'specialCurrency',
-    amount: 15,
-    message: 'Shiny charms found: +15 special coins!'
-  }
-};
-
 // Helper functions
 function isLegacyRegularCat(cell) {
   return cell && typeof cell.level === 'number' && cell.level > 0 && !cell.kind;
@@ -388,7 +345,6 @@ function buildProgressPayload(progress, { includeSuccess = false, extra = null }
     board: progress.board.map(cell => serializeBoardCell(cell, nowSec)),
     unlockedLevels: [...progress.unlockedLevels].sort((a, b) => a - b),
     specialInventory: progress.specialInventory.map(cat => serializeSpecialCat(cat)).filter(cat => cat),
-    redeemedCodes: [...progress.redeemedCodes],
     sellBonuses: progress.sellBonuses ? { ...progress.sellBonuses } : {},
     inventoryLimit: Number.isFinite(SPECIAL_INVENTORY_LIMIT) ? SPECIAL_INVENTORY_LIMIT : null
   };
@@ -403,7 +359,6 @@ async function ensureCatChessProgress(user) {
       board: Array(64).fill(null),
       unlockedLevels: [1],
       specialInventory: [],
-      redeemedCodes: [],
       lastPlayed: new Date(),
       playTime: 0,
       starterGranted: false,
@@ -469,11 +424,6 @@ async function ensureCatChessProgress(user) {
 
   user.catChessProgress.specialInventory = inventoryAdjusted;
 
-  if (!Array.isArray(user.catChessProgress.redeemedCodes)) {
-    user.catChessProgress.redeemedCodes = [];
-    modified = true;
-  }
-
   if (typeof user.catChessProgress.sellBonuses !== 'object' || user.catChessProgress.sellBonuses === null) {
     user.catChessProgress.sellBonuses = {};
     modified = true;
@@ -504,7 +454,6 @@ async function ensureCatChessProgress(user) {
     user.markModified('catChessProgress.board');
     user.markModified('catChessProgress.unlockedLevels');
     user.markModified('catChessProgress.specialInventory');
-    user.markModified('catChessProgress.redeemedCodes');
     user.markModified('catChessProgress.starterGranted');
     user.markModified('catChessProgress.sellBonuses');
     await user.save();
@@ -1129,108 +1078,6 @@ router.post('/convert_to_special', async (req, res) => {
     res.json(buildProgressPayload(progress, { includeSuccess: true }));
   } catch (error) {
     console.error('Cat Chess convert to special error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /api/cat-chess/redeem
-router.post('/redeem', async (req, res) => {
-  try {
-    const { username, code } = req.body;
-    const user = await getUser(username);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const progress = await ensureCatChessProgress(user);
-    if (!Array.isArray(progress.redeemedCodes)) {
-      progress.redeemedCodes = [];
-    }
-
-    const normalizedCode = typeof code === 'string' ? code.trim().toUpperCase() : '';
-    if (!normalizedCode) {
-      return res.status(400).json({ error: 'Code is required' });
-    }
-
-    const alreadyRedeemed = progress.redeemedCodes.some(existing => {
-      if (typeof existing !== 'string') return false;
-      return existing.toUpperCase() === normalizedCode;
-    });
-
-    if (alreadyRedeemed) {
-      return res.status(400).json({ error: 'Code already redeemed' });
-    }
-
-    const reward = CAT_CHESS_REDEEM_CODES[normalizedCode];
-    if (!reward) {
-      return res.status(400).json({ error: 'Invalid code' });
-    }
-
-    let message = reward.message || '';
-
-    switch (reward.type) {
-      case 'coins': {
-        const amount = Number(reward.amount) || 0;
-        progress.coins += amount;
-        user.markModified('catChessProgress.coins');
-        if (!message) {
-          message = `Bonus received: +${amount.toLocaleString()} coins.`;
-        }
-        break;
-      }
-      case 'specialCurrency': {
-        const amount = Number(reward.amount) || 0;
-        progress.specialCurrency += amount;
-        user.markModified('catChessProgress.specialCurrency');
-        if (!message) {
-          message = `Bonus received: +${amount} special coins.`;
-        }
-        break;
-      }
-      case 'cat': {
-        const level = Number(reward.level) || 1;
-        const emptyIndex = progress.board.findIndex(cell => cell === null);
-        if (emptyIndex === -1) {
-          return res.status(400).json({ error: 'No empty cells available to place the cat' });
-        }
-
-        progress.board[emptyIndex] = {
-          kind: 'cat',
-          level,
-          timerStart: level >= 51 ? null : new Date()
-        };
-
-        if (progress.sellBonuses && progress.sellBonuses[emptyIndex]) {
-          delete progress.sellBonuses[emptyIndex];
-          user.markModified('catChessProgress.sellBonuses');
-        }
-
-        const requirementLevel = Math.min(level + 4, MAX_UNLOCK_LEVEL);
-        const unlockChanged = unlockLevels(progress, {
-          levels: [level, requirementLevel],
-          upTo: Math.max(level, requirementLevel)
-        });
-        if (unlockChanged) {
-          user.markModified('catChessProgress.unlockedLevels');
-        }
-
-        user.markModified('catChessProgress.board');
-
-        const tierName = reward.tierName ? `${reward.tierName}` : `Level ${level}`;
-        if (!message) {
-          message = `${tierName} cat added to your board!`;
-        }
-        break;
-      }
-      default:
-        return res.status(400).json({ error: 'Invalid code' });
-    }
-
-    progress.redeemedCodes.push(normalizedCode);
-    user.markModified('catChessProgress.redeemedCodes');
-
-    await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true, extra: { message } }));
-  } catch (error) {
-    console.error('Cat Chess redeem error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
