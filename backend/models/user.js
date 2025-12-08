@@ -169,6 +169,40 @@ function createDefaultFishesProgress() {
   };
 }
 
+const happyBirdsUpgradeSchema = new mongoose.Schema({
+  helicopterTransport: { type: Boolean, default: false },
+  autoCollect: { type: Boolean, default: false }
+}, { _id: false });
+
+const richGardenUpgradeSchema = new mongoose.Schema({
+  helicopterTransport: { type: Boolean, default: false },
+  autoCollect: { type: Boolean, default: false },
+  premiumUnlockLevel: { type: Number, default: 0 }
+}, { _id: false });
+
+const goldenMineUpgradeSchema = new mongoose.Schema({
+  helicopterTransport: { type: Boolean, default: false },
+  autoCollect: { type: Boolean, default: false }
+}, { _id: false });
+
+const catChessUpgradeSchema = new mongoose.Schema({
+  acceleratedGrowth: { type: Boolean, default: false }
+}, { _id: false });
+
+const fishesUpgradeSchema = new mongoose.Schema({
+  noStockTimer: { type: Boolean, default: false },
+  noFeedingLimit: { type: Boolean, default: false },
+  noAquariumLimit: { type: Boolean, default: false }
+}, { _id: false });
+
+const lpaTransactionSchema = new mongoose.Schema({
+  itemId: { type: String, required: true },
+  game: { type: String, required: true },
+  lpaCost: { type: Number, required: true },
+  purchasedAt: { type: Date, default: Date.now },
+  metadata: { type: mongoose.Schema.Types.Mixed, default: () => ({}) }
+}, { _id: false });
+
 const currencyByGameSchema = new mongoose.Schema({
   happyBirds: { type: Number, default: 0 },
   richGarden: { type: Number, default: 0 },
@@ -279,6 +313,10 @@ const userSchema = new mongoose.Schema({
     type: currencyByGameSchema,
     default: () => ({})
   },
+  lpaPurchaseHistory: {
+    type: [lpaTransactionSchema],
+    default: () => []
+  },
   achievementProgress: {
     type: achievementProgressSchema,
     default: () => ({})
@@ -286,6 +324,26 @@ const userSchema = new mongoose.Schema({
   achievementHistory: {
     type: [achievementHistorySchema],
     default: () => []
+  },
+  happyBirdsUpgrades: {
+    type: happyBirdsUpgradeSchema,
+    default: () => ({})
+  },
+  richGardenUpgrades: {
+    type: richGardenUpgradeSchema,
+    default: () => ({})
+  },
+  goldenMineUpgrades: {
+    type: goldenMineUpgradeSchema,
+    default: () => ({})
+  },
+  catChessUpgrades: {
+    type: catChessUpgradeSchema,
+    default: () => ({})
+  },
+  fishesUpgrades: {
+    type: fishesUpgradeSchema,
+    default: () => ({})
   },
   activityStreak: {
     type: activityStreakSchema,

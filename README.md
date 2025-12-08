@@ -1,43 +1,44 @@
-# Lapia Games Platform
+﻿# Lapia Games Platform
 
-Lapia Games is a browser-based idle/clicker platform that hosts multiple interconnected games, persistent user profiles, a cross-game economy, and a shared achievement + exchange system. This README walks through every layer so new contributors can navigate the project quickly.
+Lapia Games is a browser-based idle/clicker hub that stitches multiple games into a single account, shared economy, and global achievement system. This README captures the current architecture (Dec 2025) so contributors can hit the ground running.
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
 2. [Architecture Overview](#architecture-overview)
-3. [Platform Experience](#platform-experience)
-   - [Authentication](#authentication)
-   - [Game Menu](#game-menu)
-   - [Achievements](#achievements)
-   - [Exchange & Shop](#exchange--shop)
+3. [Platform Features](#platform-features)
+  - [Authentication Flow](#authentication-flow)
+  - [Game Menu](#game-menu)
+  - [Achievements](#achievements)
+  - [Exchange & Promo Center](#exchange--promo-center)
 4. [Games](#games)
-   - [Happy Birds](#happy-birds)
-   - [Rich Garden](#rich-garden)
-   - [Golden Mine](#golden-mine)
-   - [Cat Chess](#cat-chess)
-   - [Fishes](#fishes)
-5. [Redeem Codes & Inventory](#redeem-codes--inventory)
+  - [Happy Birds](#happy-birds)
+  - [Rich Garden](#rich-garden)
+  - [Golden Mine](#golden-mine)
+  - [Cat Chess](#cat-chess)
+  - [Fishes](#fishes)
+5. [Redeem Codes & Promo History](#redeem-codes--promo-history)
 6. [API Highlights](#api-highlights)
 7. [Development Workflow](#development-workflow)
 8. [Project Layout](#project-layout)
 
 ## Quick Start
-1. Install dependencies
-   ```bash
-   npm install
-   ```
-2. Provide a MongoDB instance. By default the server connects to `mongodb://127.0.0.1:27017/lapia-games`. Override with `MONGO_URI`.
-3. Run the platform
-   ```bash
-   npm start
-   # runs node backend/server.js
-   ```
-4. Visit `http://localhost:3000` and register a user.
+1. Install dependencies:
+  ```bash
+  npm install
+  ```
+2. Ensure MongoDB is running (default URI `mongodb://127.0.0.1:27017/lapia-games`). Override via `MONGO_URI`.
+3. Start the backend + static frontend:
+  ```bash
+  npm start
+  # executes node backend/server.js
+  ```
+4. Open `http://localhost:3000`, register a user, and explore the platform menu.
 
 ### Environment Variables
 - `MONGO_URI` – Mongo connection string.
-- `ENABLE_REDEEM` – Toggle redeem code endpoints (default `true`).
-- `CONSOLE_MESSAGES` – Verbose logging flag.
+- `ENABLE_REDEEM` – Toggle promo endpoints + UI (default `true`).
+- `CONSOLE_MESSAGES` – Enable verbose logs in certain games.
+- `PORT` – Express port (defaults to `3000`).
 
 ## Architecture Overview
 - **Backend (`backend/`)** – Express + ES modules. Routes under `/api/*`, background jobs for autosave, and Mongo models for long-term storage. Key entry: `backend/server.js`.
@@ -45,31 +46,29 @@ Lapia Games is a browser-based idle/clicker platform that hosts multiple interco
 - **Frontend (`frontend/`)** – Static SPA served by Express. `frontend/index.html` bootstraps `AuthManager`, `GameManager`, toast notifications, and the shop overlay. Each game lives in `frontend/games/<game-id>/` with its own HTML, CSS, and logic.
 - **Shared Config** – Gameplay constants (`BIRDS`, `TREE_TYPES`, truck timing, redeem codes) are duplicated between backend routes and frontend game bundles. Any change must be applied in both places to keep calculations consistent.
 
-## Platform Experience
+## Platform Features
 
-### Authentication
-- Managed by `frontend/auth/auth-manager.js` and backend routes in `backend/routes/auth.js` + `backend/routes/users.js`.
-- Passwords are hashed with `bcrypt` and stored as `passwordHash`.
-- On login the server records activity (used for streak achievements) and responds with cross-game balances, inventory, and progress snapshots.
-- The UI stays hidden (`body.app-loading`) until AuthManager finishes session validation to avoid flicker.
+### Authentication Flow
+- Frontend logic lives in `frontend/auth/auth-manager.js`; backend endpoints are defined in `backend/routes/auth.js` and `backend/routes/users.js`.
+- Passwords are stored as `passwordHash` (bcrypt). Sessions rely on client-side storage + periodic refreshes.
+- After login the server records the user’s daily activity for streak achievements and returns currency snapshots, LPA balance, and per-game progress.
+- The DOM starts with `body.app-loading`; AuthManager removes it once session validation completes, ensuring the login UI fades in smoothly.
 
 ### Game Menu
-- Markup in `frontend/game-menu/index.html`, injected once the user logs in.
-- Shows username, LPA balance, unlocked count, daily streak, and per-game “last played” values saved via `GameManager`.
-- Cards launch games through `window.gameManager.launchGame(gameId)` which loads the respective HTML/JS bundle into the platform iframe.
-- CTA buttons open the achievements modal, settings placeholder, or the exchange tab of the shop overlay.
+- Template: `frontend/game-menu/index.html`; injected once a session is active.
+- Displays username, LPA balance, unlocked achievements, streak, conversion capacity, and quick actions.
+- Launch buttons call `window.gameManager.launchGame(gameId)` which swaps the active iframe/view to a specific game bundle under `frontend/games/*`.
+- Promo center + history modal share `PromoRedeemWidget` (`frontend/js/promo-manager.js`) and loads only the most recent successful codes.
 
 ### Achievements
-- Backend logic: `backend/routes/achievements.js` + `backend/services/achievement-manager.js`.
-- Tracks currency milestones, long activity streaks, social invites, and special events (e.g., “First LPA Purchase”).
-- Client: `AuthManager` renders a modal with live progress bars, best-run stats, and conversion readiness. It also triggers background refreshes every minute and when the modal is open.
-- Completing an achievement can reward LPA, update `achievementHistory`, and refresh the exchange conversion capacity.
+- Backend service: `backend/services/achievement-manager.js` with routes under `backend/routes/achievements.js`.
+- Tracks currency thresholds (shared across all games), streak milestones (1/7/30/365 days), the first LPA purchase, and invite-based goals.
+- Client modal is rendered by `AuthManager.renderAchievementModal()`: it shows cards per catalog entry, live streak progress, and conversion readiness. Counts stay in sync via `/api/achievements/status/:username` and `record-activity`.
+- Autosave + background refresh keep the modal up to date even when the user idles in games.
 
-### Exchange & Shop
-- UI in `frontend/shop/` (`shop-ui.js`, `shop-template.html`, `styles.css`).
-- Shows a single “Exchange” tab today, summarizing per-game coins, conversion readiness, and the player’s LPA balance.
-- The conversion dialog enforces spending 1,000 coins from **every** game to mint 1 LPA; the backend double-checks capacity before mutating balances.
-- Toast notifications come from `frontend/js/toast-manager.js` for consistent UX.
+### Exchange & Promo Center
+- Exchange UI lives in `frontend/shop/` (reused modal). Conversion requires 100 coins from each game per LPA token. Backend double-checks capacity in `AchievementManager.performConversion`.
+- Global promo input/history sits inside the game menu and uses `/api/promo/redeem` and `/api/promo/history/:username`. Only the ten most recent successful entries are displayed client-side for clarity.
 
 ## Games
 
@@ -117,10 +116,11 @@ Lapia Games is a browser-based idle/clicker platform that hosts multiple interco
   3. Use boosts from the inventory to accelerate growth.
 - **Key Files**: `backend/routes/fishes.js`, `frontend/games/fishes/`.
 
-## Redeem Codes & Inventory
-- Codes configured in `REDEEM_CODES.md` and validated in each route (`happy-birds`, `rich-garden`, etc.).
-- Environment flag `ENABLE_REDEEM` toggles the feature globally.
-- User inventory entries live inside the `inventory` subdocument on the `User` model; shared UI lives in `frontend/shop/` and `frontend/js`.
+## Redeem Codes & Promo History
+- Codes live in `REDEEM_CODES.md` and are consumed through `PromoCodeManager` (`backend/services/promo-code-manager.js`).
+- `ENABLE_REDEEM=true` exposes `/api/promo/redeem` + `/api/promo/history/:username` endpoints. Failed attempts are still stored, but the frontend only shows successful redemptions (max 10).
+- Promo effects vary per game (skip timers, boosts, etc.) and are executed via `promo-game-executor.js`.
+- Inventory items granted from codes or shop purchases sit inside the `User.inventory` tree and surface in the shop overlay when relevant.
 
 ## API Highlights
 - **Auth & Users** (`backend/routes/auth.js`, `backend/routes/users.js`): register, login, fetch platform profile, platform stats.

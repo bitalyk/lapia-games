@@ -2,6 +2,18 @@ const MAX_GRID_COLUMNS = 4;
 const SESSION_FOOD_LIMIT = 3;
 const FOOD_COST_COINS = 100; // Keep in sync with backend/routes/fishes.js
 
+const DEFAULT_UPGRADES = Object.freeze({
+    noStockTimer: false,
+    noFeedingLimit: false,
+    noAquariumLimit: false
+});
+
+const DEFAULT_LIMITS = Object.freeze({
+    feedPerSession: SESSION_FOOD_LIMIT,
+    aquariumMaxSize: 20,
+    shopRestockSeconds: 0
+});
+
 export default class FishesGame {
     constructor() {
         this.gameManager = null;
@@ -21,7 +33,9 @@ export default class FishesGame {
             shop: { secondsUntilRestock: 0, catalog: {}, purchases: {} },
             freeFood: { available: true, secondsRemaining: 0, amount: 10 },
             timers: { feedCooldown: 0, shopRestock: 0, freeFood: 0 },
-            metrics: { totalFish: 0, occupiedSlots: 0, capacity: 1 }
+            metrics: { totalFish: 0, occupiedSlots: 0, capacity: 1 },
+            upgrades: { ...DEFAULT_UPGRADES },
+            limits: { ...DEFAULT_LIMITS }
         };
 
         this.lastSync = Date.now();
@@ -547,6 +561,13 @@ export default class FishesGame {
         this.state.freeFood = payload.freeFood ? { ...payload.freeFood } : { available: true, secondsRemaining: 0, amount: 10 };
         this.state.timers = payload.timers ? { ...payload.timers } : { feedCooldown: 0, shopRestock: 0, freeFood: 0 };
         this.state.metrics = payload.metrics ? { ...payload.metrics } : { totalFish: this.state.fishes.length, occupiedSlots: this.state.fishes.length, capacity: this.state.aquarium?.size || 0 };
+        const previousLimits = this.state.limits || DEFAULT_LIMITS;
+        this.state.upgrades = { ...DEFAULT_UPGRADES, ...(payload.upgrades || {}) };
+        this.state.limits = {
+            feedPerSession: payload.limits?.feedPerSession ?? previousLimits.feedPerSession ?? DEFAULT_LIMITS.feedPerSession,
+            aquariumMaxSize: payload.limits?.aquariumMaxSize ?? previousLimits.aquariumMaxSize ?? DEFAULT_LIMITS.aquariumMaxSize,
+            shopRestockSeconds: payload.limits?.shopRestockSeconds ?? previousLimits.shopRestockSeconds ?? DEFAULT_LIMITS.shopRestockSeconds
+        };
 
         this.lastSync = Date.now();
         this.syncCurrency();
@@ -622,20 +643,21 @@ export default class FishesGame {
         const progressPercent = requiredFood > 0 ? Math.min(100, Math.round((fedSoFar / requiredFood) * 100)) : 100;
         const nextLevelText = fish.level >= maxLevel ? 'Max level reached' : `${remainingFood} food to next level`;
         const progressLabel = fish.level >= maxLevel ? 'Max level reached' : `${fedSoFar}/${requiredFood} food (${progressPercent}%)`;
-        const sessionTotal = Math.max(0, fish.maxFeedsPerSession ?? SESSION_FOOD_LIMIT);
-        const sessionRemainingRaw = Math.max(0, fish.sessionFeedsRemaining ?? 0);
-        const feedsUsedRaw = Math.max(0, fish.sessionFeedsUsed ?? 0);
-        const feedsUsed = sessionTotal > 0 ? Math.min(sessionTotal, feedsUsedRaw) : feedsUsedRaw;
-        const sessionRemaining = sessionTotal > 0 ? Math.max(0, sessionTotal - feedsUsed) : sessionRemainingRaw;
-        const feedSessionLabel = sessionTotal > 0
+        const hasFeedLimit = Number.isFinite(fish.maxFeedsPerSession);
+        const sessionTotal = hasFeedLimit ? Math.max(0, fish.maxFeedsPerSession) : null;
+        const feedsUsedRaw = hasFeedLimit ? Math.max(0, fish.sessionFeedsUsed ?? 0) : null;
+        const sessionRemainingRaw = hasFeedLimit ? Math.max(0, fish.sessionFeedsRemaining ?? 0) : null;
+        const feedsUsed = hasFeedLimit ? Math.min(sessionTotal, feedsUsedRaw ?? 0) : null;
+        const sessionRemaining = hasFeedLimit ? Math.max(0, sessionTotal - (feedsUsed ?? 0)) : null;
+        const feedSessionLabel = hasFeedLimit
             ? `${feedsUsed}/${sessionTotal} food used${sessionRemaining > 0 ? ` | ${sessionRemaining} left` : ' | resting'}`
-            : `${sessionRemaining} food left before rest`;
-        const canFeed = fish.canFeed && sessionRemaining > 0 && remainingFood > 0;
+            : 'No feeding limit active';
+        const canFeed = fish.canFeed && remainingFood > 0 && (!hasFeedLimit || (sessionRemaining ?? 0) > 0);
         const statusText = cooldown > 0
             ? `Cooling down: ${this.formatTime(cooldown)}`
             : canFeed
                 ? 'Ready to feed'
-                : sessionRemaining <= 0
+                : hasFeedLimit && (sessionRemaining ?? 0) <= 0
                     ? 'Resting (limit reached)'
                     : remainingFood <= 0
                         ? 'Ready to level up'
@@ -688,27 +710,41 @@ export default class FishesGame {
         `;
     }
 
-    renderShop() {
+        renderShop() {
         const shopContainer = this.gameContainer.querySelector('[data-role="shop-items"]');
         const restockTimer = this.gameContainer.querySelector('[data-role="restock-timer"]');
         if (!shopContainer) return;
 
-        const { catalog = {}, purchases = {}, secondsUntilRestock = 0 } = this.state.shop;
+            const { catalog = {}, purchases = {}, secondsUntilRestock = 0 } = this.state.shop;
+            const globalUnlimitedStock = Boolean(this.state.upgrades?.noStockTimer);
         shopContainer.innerHTML = '';
 
         if (restockTimer) {
-            restockTimer.textContent = secondsUntilRestock > 0
-                ? `Restock in ${this.formatTime(secondsUntilRestock)}`
-                : 'Shop restocked';
+                restockTimer.textContent = globalUnlimitedStock
+                    ? 'Premium shop unlocked'
+                    : secondsUntilRestock > 0
+                        ? `Restock in ${this.formatTime(secondsUntilRestock)}`
+                        : 'Shop restocked';
         }
 
         Object.keys(catalog).forEach((key) => {
             const item = catalog[key];
             const bought = purchases[key] || 0;
-            const available = Math.max(0, item.available ?? (item.restockLimit - bought));
+                const itemUnlimited = Boolean(item.unlimitedStock || globalUnlimitedStock);
+                const fallbackAvailability = item.restockLimit != null ? item.restockLimit - bought : Number.POSITIVE_INFINITY;
+                const rawAvailability = typeof item.available === 'number' ? item.available : fallbackAvailability;
+                const available = itemUnlimited ? Number.POSITIVE_INFINITY : Math.max(0, rawAvailability);
             const affordable = this.state.coins >= item.baseCost;
             const capacityReached = this.state.fishes.length >= this.state.aquarium.size;
-            const disabled = available <= 0 || !affordable || capacityReached;
+                const disabled = (!itemUnlimited && available <= 0) || !affordable || capacityReached;
+                const limitLabel = itemUnlimited
+                    ? 'Unlimited'
+                    : `${bought}/${item.restockLimit ?? '—'}`;
+                const statusLabel = itemUnlimited
+                    ? 'Always available'
+                    : available > 0
+                        ? 'Available'
+                        : 'Waiting for restock';
 
             const card = document.createElement('div');
             card.className = 'shop-card';
@@ -719,8 +755,8 @@ export default class FishesGame {
                 </div>
                 <div class="shop-details">
                     <div class="detail-row"><span>Cost:</span><span>${item.baseCost.toLocaleString()} coins</span></div>
-                    <div class="detail-row"><span>Limit:</span><span>${bought}/${item.restockLimit}</span></div>
-                    <div class="detail-row"><span>Status:</span><span>${available > 0 ? 'Available' : 'Waiting for restock'}</span></div>
+                        <div class="detail-row"><span>Limit:</span><span>${limitLabel}</span></div>
+                        <div class="detail-row"><span>Status:</span><span>${statusLabel}</span></div>
                     <p class="shop-desc">${item.description || ''}</p>
                 </div>
                 <button class="buy-fish-button" data-fish-type="${key}" ${disabled ? 'disabled' : ''}>Buy Fish</button>
@@ -758,7 +794,8 @@ export default class FishesGame {
         if (!expandBtn || !hintEl) return;
 
         const { aquarium } = this.state;
-        const atMax = aquarium.size >= aquarium.maxSize;
+        const hasCap = Number.isFinite(aquarium.maxSize);
+        const atMax = hasCap ? aquarium.size >= aquarium.maxSize : false;
         const canExpand = aquarium.canExpand && !atMax;
         const nextCost = aquarium.nextExpansionCost;
 
@@ -767,6 +804,10 @@ export default class FishesGame {
             hintEl.textContent = 'Maximum aquarium size reached.';
         } else if (!aquarium.canExpand) {
             hintEl.textContent = 'Fill every slot before expanding again.';
+        } else if (!hasCap) {
+            hintEl.textContent = nextCost != null
+                ? `Next expansion cost: ${nextCost.toLocaleString()} coins (no limit).`
+                : 'Unlimited expansions unlocked.';
         } else if (nextCost != null) {
             hintEl.textContent = `Next expansion cost: ${nextCost.toLocaleString()} coins.`;
         } else {
@@ -798,27 +839,29 @@ export default class FishesGame {
                 if (!fish) return fish;
                 const previousCooldown = Math.max(0, fish.cooldownRemaining ?? 0);
                 const cooldownRemaining = Math.max(0, previousCooldown - deltaSeconds);
-                let sessionRemaining = Math.max(0, fish.sessionFeedsRemaining ?? 0);
-                let sessionUsed = Math.max(0, fish.sessionFeedsUsed ?? 0);
-                const maxFeeds = Math.max(0, fish.maxFeedsPerSession ?? 0);
-                if (previousCooldown > 0 && cooldownRemaining === 0) {
+                const hasFeedLimit = Number.isFinite(fish.maxFeedsPerSession);
+                const maxFeeds = hasFeedLimit ? Math.max(0, fish.maxFeedsPerSession ?? 0) : null;
+                let sessionRemaining = hasFeedLimit ? Math.max(0, fish.sessionFeedsRemaining ?? (maxFeeds ?? 0)) : null;
+                let sessionUsed = hasFeedLimit ? Math.max(0, fish.sessionFeedsUsed ?? 0) : null;
+                if (hasFeedLimit && previousCooldown > 0 && cooldownRemaining === 0) {
                     sessionRemaining = maxFeeds;
                     sessionUsed = 0;
                 }
-                if (maxFeeds > 0) {
-                    sessionUsed = Math.min(maxFeeds, sessionUsed);
-                    sessionRemaining = Math.max(0, Math.min(maxFeeds, sessionRemaining, maxFeeds - sessionUsed));
+                if (hasFeedLimit && maxFeeds > 0) {
+                    sessionUsed = Math.min(maxFeeds, sessionUsed ?? 0);
+                    const remainingAfterUse = Math.max(0, maxFeeds - (sessionUsed ?? 0));
+                    sessionRemaining = Math.max(0, Math.min(maxFeeds, sessionRemaining ?? maxFeeds, remainingAfterUse));
                 }
                 const remainingFoodForLevel = Math.max(0, fish.remainingFoodForLevel ?? 0);
                 const canFeed = cooldownRemaining === 0
                     && fish.level < (fish.maxLevel ?? 0)
-                    && sessionRemaining > 0
+                    && (!hasFeedLimit || (sessionRemaining ?? 0) > 0)
                     && remainingFoodForLevel > 0;
                 return {
                     ...fish,
                     cooldownRemaining,
-                    sessionFeedsRemaining: sessionRemaining,
-                    sessionFeedsUsed: sessionUsed,
+                    sessionFeedsRemaining: hasFeedLimit ? sessionRemaining : null,
+                    sessionFeedsUsed: hasFeedLimit ? sessionUsed : null,
                     canFeed
                 };
             });
@@ -870,19 +913,25 @@ export default class FishesGame {
 
         const remaining = Math.max(0, Math.floor(fish.remainingFoodForLevel ?? 0));
         const required = Math.max(0, Math.floor(fish.requiredFoodForLevel ?? 0));
-        const sessionTotal = Math.max(0, Math.floor(fish.maxFeedsPerSession ?? SESSION_FOOD_LIMIT));
-        const sessionUsedRaw = Math.max(0, Math.floor(fish.sessionFeedsUsed ?? 0));
-        const sessionRemainingRaw = Math.max(0, Math.floor(fish.sessionFeedsRemaining ?? 0));
-        const sessionUsed = sessionTotal > 0 ? Math.min(sessionTotal, sessionUsedRaw) : sessionUsedRaw;
-        const sessionRemaining = sessionTotal > 0 ? Math.max(0, sessionTotal - sessionUsed) : sessionRemainingRaw;
+        const hasFeedLimit = Number.isFinite(fish.maxFeedsPerSession);
+        const sessionTotal = hasFeedLimit ? Math.max(0, Math.floor(fish.maxFeedsPerSession)) : null;
+        const sessionUnlimited = !hasFeedLimit;
+        const sessionUsed = hasFeedLimit ? Math.min(sessionTotal, Math.max(0, Math.floor(fish.sessionFeedsUsed ?? 0))) : 0;
+        const rawRemaining = hasFeedLimit
+            ? Math.max(0, Math.floor(fish.sessionFeedsRemaining ?? 0))
+            : remaining;
+        const sessionRemaining = hasFeedLimit
+            ? Math.max(0, Math.min(sessionTotal, sessionTotal - sessionUsed, rawRemaining))
+            : rawRemaining;
         const availableFood = Math.max(0, Math.floor(this.state.food));
-        const maxFeed = remaining > 0 ? Math.min(remaining, availableFood, sessionRemaining) : 0;
+        const sessionLimit = sessionUnlimited ? remaining : sessionRemaining;
+        const maxFeed = remaining > 0 ? Math.min(remaining, availableFood, sessionLimit) : 0;
         const amountRequested = Math.max(1, Math.floor(requestedAmount || 1));
         const amount = maxFeed > 0 ? Math.min(amountRequested, maxFeed) : 0;
         const afterRemaining = Math.max(0, remaining - amount);
         const canFeed = Boolean(
             fish.canFeed &&
-            sessionRemaining > 0 &&
+            (sessionUnlimited || sessionRemaining > 0) &&
             remaining > 0 &&
             availableFood > 0 &&
             maxFeed > 0
@@ -895,6 +944,7 @@ export default class FishesGame {
             sessionRemaining,
             sessionTotal,
             sessionUsed,
+            sessionUnlimited,
             availableFood,
             maxFeed,
             amount,
@@ -937,7 +987,9 @@ export default class FishesGame {
         }
 
         if (this.feedSessionLabel) {
-            if (constraints.sessionTotal > 0) {
+            if (constraints.sessionUnlimited) {
+                this.feedSessionLabel.textContent = 'No feeding limit active.';
+            } else if (constraints.sessionTotal > 0) {
                 const feedsUsed = Math.max(0, constraints.sessionUsed ?? (constraints.sessionTotal - constraints.sessionRemaining));
                 const status = constraints.sessionRemaining > 0
                     ? `${constraints.sessionRemaining} food left before rest`
@@ -978,7 +1030,7 @@ export default class FishesGame {
             let hintMessage = 'Select how many food units to feed.';
             if (this.currentFeedFish.level >= this.currentFeedFish.maxLevel) {
                 hintMessage = 'This fish already reached max level.';
-            } else if (constraints.sessionRemaining <= 0) {
+            } else if (!constraints.sessionUnlimited && constraints.sessionRemaining <= 0) {
                 hintMessage = 'Food limit reached. Wait for cooldown.';
             } else if (constraints.availableFood <= 0) {
                 hintMessage = 'You need more food to feed this fish.';
@@ -991,12 +1043,17 @@ export default class FishesGame {
             } else {
                 hintMessage = `This feed leaves ${constraints.afterRemaining} food remaining to level up.`;
             }
-            const sessionTotalForDisplay = constraints.sessionTotal
-                || (constraints.sessionRemaining + (constraints.sessionUsed ?? 0))
-                || constraints.sessionRemaining
-                || (constraints.sessionUsed ?? 0)
-                || SESSION_FOOD_LIMIT;
-            hintMessage = `${hintMessage} (Food available: ${constraints.availableFood.toLocaleString()} | Session remaining: ${constraints.sessionRemaining}/${sessionTotalForDisplay} food)`;
+            const sessionSummary = constraints.sessionUnlimited
+                ? 'Session remaining: Unlimited'
+                : (() => {
+                    const sessionTotalForDisplay = constraints.sessionTotal
+                        || (constraints.sessionRemaining + (constraints.sessionUsed ?? 0))
+                        || constraints.sessionRemaining
+                        || (constraints.sessionUsed ?? 0)
+                        || SESSION_FOOD_LIMIT;
+                    return `Session remaining: ${constraints.sessionRemaining}/${sessionTotalForDisplay} food`;
+                })();
+            hintMessage = `${hintMessage} (Food available: ${constraints.availableFood.toLocaleString()} | ${sessionSummary})`;
             this.feedHint.textContent = hintMessage;
         }
 

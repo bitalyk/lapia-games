@@ -1,6 +1,7 @@
 // backend/routes/platform.js
 import express from "express";
 import User from "../models/user.js";
+import LpaShopManager from "../services/lpa-shop.js";
 
 const router = express.Router();
 
@@ -192,27 +193,54 @@ router.post("/game-progress", async (req, res) => {
   }
 });
 
+// Каталог магазина LPA
+router.get("/shop/catalog/:username", async (req, res) => {
+  try {
+    const user = await User.findByUsername(req.params.username);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const catalog = LpaShopManager.getCatalog(user);
+    return res.json({
+      success: true,
+      catalog,
+      lpaBalance: user.lpaBalance,
+      purchaseHistory: user.lpaPurchaseHistory || []
+    });
+  } catch (error) {
+    console.error("Shop catalog error:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 // Покупка в магазине
 router.post("/shop/purchase", async (req, res) => {
   try {
-    const { username, itemId, itemType, game, quantity = 1 } = req.body;
-    
+    const { username, itemId } = req.body || {};
+
+    if (!username || !itemId) {
+      return res.status(400).json({ error: "Missing username or itemId" });
+    }
+
     const user = await User.findByUsername(username);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Здесь будет логика обработки покупки
-    // Пока просто логируем
-    if (process.env.CONSOLE_MESSAGES === 'true') console.log(`Purchase: ${username} bought ${quantity}x ${itemId} for ${game}`);
+    const result = LpaShopManager.purchase(user, itemId);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || "Purchase unavailable" });
+    }
 
-    // В будущем здесь будет списание валют и выдача предметов
+    await user.save();
+    const catalog = LpaShopManager.getCatalog(user);
 
-    res.json({
+    return res.json({
       success: true,
-      message: "Purchase completed",
-      itemId,
-      quantity
+      purchase: result,
+      catalog,
+      lpaBalance: user.lpaBalance
     });
   } catch (error) {
     console.error("Shop purchase error:", error);

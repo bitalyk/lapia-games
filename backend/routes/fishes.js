@@ -82,6 +82,27 @@ const FISH_TYPES = {
 
 const FISH_TYPE_KEYS = Object.keys(FISH_TYPES);
 
+const DEFAULT_UPGRADE_FLAGS = Object.freeze({
+	noStockTimer: false,
+	noFeedingLimit: false,
+	noAquariumLimit: false
+});
+
+function getFishesUpgradeState(user) {
+	const upgrades = user?.fishesUpgrades || {};
+	const flags = {
+		noStockTimer: Boolean(upgrades.noStockTimer),
+		noFeedingLimit: Boolean(upgrades.noFeedingLimit),
+		noAquariumLimit: Boolean(upgrades.noAquariumLimit)
+	};
+	return {
+		flags,
+		feedLimit: flags.noFeedingLimit ? Infinity : MAX_FEEDS_PER_SESSION,
+		aquariumLimit: flags.noAquariumLimit ? Infinity : MAX_AQUARIUM_SIZE,
+		shopRestockSeconds: flags.noStockTimer ? 0 : SHOP_RESTOCK_SEC
+	};
+}
+
 function getFishConfig(type) {
 	return FISH_TYPES[type] || null;
 }
@@ -264,8 +285,8 @@ function calculateSellValue(fish) {
 	return Math.round((baseCost + foodValue) * multiplier);
 }
 
-function getExpansionCost(currentSize) {
-	if (currentSize >= MAX_AQUARIUM_SIZE) {
+function getExpansionCost(currentSize, { maxSize = MAX_AQUARIUM_SIZE } = {}) {
+	if (Number.isFinite(maxSize) && currentSize >= maxSize) {
 		return null;
 	}
 	const steps = Math.max(0, currentSize - 1);
@@ -273,7 +294,7 @@ function getExpansionCost(currentSize) {
 	return Math.ceil(rawCost / 100) * 100;
 }
 
-function applyShopRestock(progress, now) {
+function applyShopRestock(progress, now, upgradeState = null) {
 	let modified = false;
 	const previous = progress.shopPurchases;
 	progress.shopPurchases = toPurchaseMap(progress.shopPurchases);
@@ -281,10 +302,25 @@ function applyShopRestock(progress, now) {
 		modified = true;
 	}
 
+	const unlimitedStock = Boolean(upgradeState?.flags?.noStockTimer);
+	const restockSeconds = upgradeState?.shopRestockSeconds ?? SHOP_RESTOCK_SEC;
+
+	if (unlimitedStock) {
+		if (progress.shopPurchases.size > 0) {
+			progress.shopPurchases = new Map();
+			modified = true;
+		}
+		if (progress.shopRestockAt !== null) {
+			progress.shopRestockAt = null;
+			modified = true;
+		}
+		return modified;
+	}
+
 	const currentRestock = progress.shopRestockAt ? new Date(progress.shopRestockAt) : null;
 	if (!currentRestock || Number.isNaN(currentRestock.getTime()) || now >= currentRestock) {
 		progress.shopPurchases = new Map();
-		progress.shopRestockAt = new Date(now.getTime() + SHOP_RESTOCK_SEC * 1000);
+		progress.shopRestockAt = new Date(now.getTime() + restockSeconds * 1000);
 		modified = true;
 	} else {
 		progress.shopRestockAt = currentRestock;
@@ -293,11 +329,22 @@ function applyShopRestock(progress, now) {
 	return modified;
 }
 
-function refreshFishCooldowns(progress, now) {
+function refreshFishCooldowns(progress, now, upgradeState = null) {
 	let modified = false;
+	const unlimitedFeeding = Boolean(upgradeState?.flags?.noFeedingLimit);
+	const feedLimit = upgradeState?.feedLimit ?? MAX_FEEDS_PER_SESSION;
 	for (const fish of progress.fishes) {
 		if (!fish) continue;
-		if (fish.cooldownEndsAt) {
+		if (unlimitedFeeding) {
+			if (fish.cooldownEndsAt) {
+				fish.cooldownEndsAt = null;
+				modified = true;
+			}
+			if (fish.feedsUsed !== 0) {
+				fish.feedsUsed = 0;
+				modified = true;
+			}
+		} else if (fish.cooldownEndsAt) {
 			const cooldown = new Date(fish.cooldownEndsAt);
 			if (Number.isNaN(cooldown.getTime()) || now >= cooldown) {
 				fish.cooldownEndsAt = null;
@@ -307,7 +354,9 @@ function refreshFishCooldowns(progress, now) {
 				fish.cooldownEndsAt = cooldown;
 			}
 		}
-		fish.feedsUsed = Math.max(0, Math.min(MAX_FEEDS_PER_SESSION, Math.floor(Number(fish.feedsUsed) || 0)));
+		if (!unlimitedFeeding) {
+			fish.feedsUsed = Math.max(0, Math.min(feedLimit, Math.floor(Number(fish.feedsUsed) || 0)));
+		}
 		if (fish.lastFedAt) {
 			fish.lastFedAt = new Date(fish.lastFedAt);
 		}
@@ -318,8 +367,12 @@ function refreshFishCooldowns(progress, now) {
 	return modified;
 }
 
-function ensureFishesProgress(user) {
+function ensureFishesProgress(user, upgradeState = null) {
 	let modified = false;
+	const effectiveUpgradeState = upgradeState || getFishesUpgradeState(user);
+	const aquariumLimit = effectiveUpgradeState?.aquariumLimit ?? MAX_AQUARIUM_SIZE;
+	const restockSeconds = effectiveUpgradeState?.shopRestockSeconds ?? SHOP_RESTOCK_SEC;
+	const initialRestockAt = restockSeconds > 0 ? new Date(Date.now() + restockSeconds * 1000) : null;
 
 	if (!user.fishesProgress) {
 		user.fishesProgress = {
@@ -328,7 +381,7 @@ function ensureFishesProgress(user) {
 			aquariumSize: 1,
 			fishes: [createFish('little')],
 			shopPurchases: new Map(),
-			shopRestockAt: new Date(Date.now() + SHOP_RESTOCK_SEC * 1000),
+			shopRestockAt: initialRestockAt,
 			lastFreeFoodAt: null
 		};
 		return true;
@@ -368,7 +421,8 @@ function ensureFishesProgress(user) {
 	progress.fishes = repaired;
 
 	const normalizedSize = Number(progress.aquariumSize) || 1;
-	progress.aquariumSize = Math.max(1, Math.min(MAX_AQUARIUM_SIZE, normalizedSize));
+	const upperBound = Number.isFinite(aquariumLimit) ? aquariumLimit : Infinity;
+	progress.aquariumSize = Math.max(1, Math.min(upperBound, normalizedSize));
 	if (progress.fishes.length > progress.aquariumSize) {
 		progress.fishes = progress.fishes.slice(0, progress.aquariumSize);
 		modified = true;
@@ -386,8 +440,8 @@ function ensureFishesProgress(user) {
 		modified = true;
 	}
 
-	if (!progress.shopRestockAt) {
-		progress.shopRestockAt = new Date(Date.now() + SHOP_RESTOCK_SEC * 1000);
+	if (!progress.shopRestockAt || Number.isNaN(new Date(progress.shopRestockAt).getTime())) {
+		progress.shopRestockAt = restockSeconds > 0 ? new Date(Date.now() + restockSeconds * 1000) : null;
 		modified = true;
 	} else {
 		progress.shopRestockAt = new Date(progress.shopRestockAt);
@@ -401,16 +455,19 @@ function ensureFishesProgress(user) {
 	return modified;
 }
 
-function buildFishView(fish, now) {
+function buildFishView(fish, now, upgradeState = null) {
 	const config = getFishConfig(fish.type);
-	const cooldownRemaining = fish.cooldownEndsAt
+	const unlimitedFeeding = Boolean(upgradeState?.flags?.noFeedingLimit);
+	const feedLimit = upgradeState?.feedLimit ?? MAX_FEEDS_PER_SESSION;
+	const cooldownDuration = fish.cooldownEndsAt
 		? Math.max(0, Math.floor((new Date(fish.cooldownEndsAt).getTime() - now.getTime()) / 1000))
 		: 0;
+	const cooldownRemaining = unlimitedFeeding ? 0 : cooldownDuration;
 	const feedProgress = Number(fish.feedProgress) || 0;
-	const feedsUsed = Number(fish.feedsUsed) || 0;
+	const feedsUsed = unlimitedFeeding ? 0 : Number(fish.feedsUsed) || 0;
 	const requirement = fish.level >= MAX_LEVEL ? 0 : getFoodRequired(config, fish.level);
 	const remainingFood = fish.level >= MAX_LEVEL ? 0 : Math.max(0, requirement - feedProgress);
-	const sessionFeedsRemaining = Math.max(0, MAX_FEEDS_PER_SESSION - feedsUsed);
+	const sessionFeedsRemaining = unlimitedFeeding ? null : Math.max(0, feedLimit - feedsUsed);
 	const nextLevelCost = fish.level >= MAX_LEVEL
 		? null
 		: {
@@ -430,24 +487,27 @@ function buildFishView(fish, now) {
 		maxLevel: MAX_LEVEL,
 		foodConsumed: fish.foodConsumed || 0,
 		cooldownRemaining,
-		canFeed: cooldownRemaining === 0 && fish.level < MAX_LEVEL && remainingFood > 0 && sessionFeedsRemaining > 0,
+		canFeed: cooldownRemaining === 0 && fish.level < MAX_LEVEL && remainingFood > 0 && (unlimitedFeeding || sessionFeedsRemaining > 0),
 		nextLevelCost,
 		potentialSellValue: fish.level > 1 ? calculateSellValue(fish) : null,
 		createdAt: fish.createdAt ? new Date(fish.createdAt).toISOString() : null,
 		feedProgress,
 		remainingFoodForLevel: remainingFood,
 		requiredFoodForLevel: requirement,
-		sessionFeedsUsed: feedsUsed,
+		sessionFeedsUsed: unlimitedFeeding ? null : feedsUsed,
 		sessionFeedsRemaining,
-		maxFeedsPerSession: MAX_FEEDS_PER_SESSION
+		maxFeedsPerSession: unlimitedFeeding ? null : feedLimit
 	};
 }
 
-function buildShopPayload(progress, now) {
-	const restockAt = progress.shopRestockAt ? new Date(progress.shopRestockAt) : null;
-	const secondsUntilRestock = restockAt
-		? Math.max(0, Math.floor((restockAt.getTime() - now.getTime()) / 1000))
-		: 0;
+function buildShopPayload(progress, now, upgradeState = null) {
+	const unlimitedStock = Boolean(upgradeState?.flags?.noStockTimer);
+	const restockAt = unlimitedStock ? null : progress.shopRestockAt ? new Date(progress.shopRestockAt) : null;
+	const secondsUntilRestock = unlimitedStock
+		? 0
+		: restockAt
+			? Math.max(0, Math.floor((restockAt.getTime() - now.getTime()) / 1000))
+			: 0;
 
 	const purchases = progress.shopPurchases instanceof Map
 		? progress.shopPurchases
@@ -456,15 +516,18 @@ function buildShopPayload(progress, now) {
 	const catalog = {};
 	for (const [key, config] of Object.entries(FISH_TYPES)) {
 		const bought = Number(purchases.get(key) || 0);
+		const restockLimit = unlimitedStock ? null : config.restockLimit;
+		const available = unlimitedStock ? null : Math.max(0, config.restockLimit - bought);
 		catalog[key] = {
 			key,
 			name: config.name,
 			tier: config.tier,
 			baseCost: config.baseCost,
-			restockLimit: config.restockLimit,
-			purchased: bought,
-			available: Math.max(0, config.restockLimit - bought),
-			description: config.description
+			restockLimit,
+			purchased: unlimitedStock ? 0 : bought,
+			available,
+			description: config.description,
+			unlimitedStock
 		};
 	}
 
@@ -500,6 +563,12 @@ function buildFreeFoodPayload(progress, now) {
 
 function buildStatusPayload(progress, options = {}) {
 	const now = options.now || new Date();
+	const upgradeState = options.upgradeState || null;
+	const aquariumLimit = upgradeState?.aquariumLimit ?? MAX_AQUARIUM_SIZE;
+	const finiteAquariumLimit = Number.isFinite(aquariumLimit) ? aquariumLimit : null;
+	const canGrowAquarium = (Number.isFinite(aquariumLimit) ? progress.aquariumSize < aquariumLimit : true)
+		&& progress.fishes.length >= progress.aquariumSize;
+	const feedLimit = upgradeState?.feedLimit ?? MAX_FEEDS_PER_SESSION;
 
 	return {
 		success: true,
@@ -507,18 +576,24 @@ function buildStatusPayload(progress, options = {}) {
 		food: progress.food,
 		aquarium: {
 			size: progress.aquariumSize,
-			maxSize: MAX_AQUARIUM_SIZE,
-			canExpand: progress.aquariumSize < MAX_AQUARIUM_SIZE && progress.fishes.length >= progress.aquariumSize,
-			nextExpansionCost: getExpansionCost(progress.aquariumSize)
+			maxSize: finiteAquariumLimit,
+			canExpand: canGrowAquarium,
+			nextExpansionCost: getExpansionCost(progress.aquariumSize, { maxSize: aquariumLimit })
 		},
-		fishes: progress.fishes.map((fish) => buildFishView(fish, now)),
-		shop: buildShopPayload(progress, now),
+		fishes: progress.fishes.map((fish) => buildFishView(fish, now, upgradeState)),
+		shop: buildShopPayload(progress, now, upgradeState),
 		freeFood: buildFreeFoodPayload(progress, now),
 		timers: {
 			feedCooldown: FEED_COOLDOWN_SEC,
-			shopRestock: SHOP_RESTOCK_SEC,
+			shopRestock: upgradeState?.shopRestockSeconds ?? SHOP_RESTOCK_SEC,
 			freeFood: FREE_FOOD_COOLDOWN_SEC
 		},
+		limits: {
+			feedPerSession: Number.isFinite(feedLimit) ? feedLimit : null,
+			aquariumMaxSize: finiteAquariumLimit,
+			shopRestockSeconds: upgradeState?.shopRestockSeconds ?? SHOP_RESTOCK_SEC
+		},
+		upgrades: upgradeState?.flags || { ...DEFAULT_UPGRADE_FLAGS },
 		metrics: {
 			totalFish: progress.fishes.length,
 			occupiedSlots: progress.fishes.length,
@@ -546,16 +621,17 @@ router.get('/status/:username', async (req, res) => {
 		}
 
 		const now = new Date();
-		let modified = ensureFishesProgress(user);
-		modified = applyShopRestock(user.fishesProgress, now) || modified;
-		modified = refreshFishCooldowns(user.fishesProgress, now) || modified;
+		const upgradeState = getFishesUpgradeState(user);
+		let modified = ensureFishesProgress(user, upgradeState);
+		modified = applyShopRestock(user.fishesProgress, now, upgradeState) || modified;
+		modified = refreshFishCooldowns(user.fishesProgress, now, upgradeState) || modified;
 
 		if (modified) {
 			user.markModified('fishesProgress');
 			await user.save();
 		}
 
-		return res.json(buildStatusPayload(user.fishesProgress, { now }));
+		return res.json(buildStatusPayload(user.fishesProgress, { now, upgradeState }));
 	} catch (error) {
 		console.error('Fishes status error:', error);
 		return res.status(500).json({ error: 'Server error' });
@@ -577,9 +653,12 @@ router.post('/feed', async (req, res) => {
 		}
 
 		const now = new Date();
-		ensureFishesProgress(user);
-		applyShopRestock(user.fishesProgress, now);
-		refreshFishCooldowns(user.fishesProgress, now);
+		const upgradeState = getFishesUpgradeState(user);
+		const unlimitedFeeding = Boolean(upgradeState.flags.noFeedingLimit);
+		const feedLimit = upgradeState.feedLimit;
+		ensureFishesProgress(user, upgradeState);
+		applyShopRestock(user.fishesProgress, now, upgradeState);
+		refreshFishCooldowns(user.fishesProgress, now, upgradeState);
 
 		const progress = user.fishesProgress;
 		const index = findFishIndex(progress, fishId);
@@ -617,9 +696,9 @@ router.post('/feed', async (req, res) => {
 			return res.status(400).json({ error: 'Fish is already at max level' });
 		}
 
-		let feedsUsed = Math.max(0, Number(fish.feedsUsed) || 0);
-		let sessionRemaining = Math.max(0, MAX_FEEDS_PER_SESSION - feedsUsed);
-		if (sessionRemaining <= 0) {
+		let feedsUsed = unlimitedFeeding ? 0 : Math.max(0, Number(fish.feedsUsed) || 0);
+		let sessionRemaining = unlimitedFeeding ? Infinity : Math.max(0, feedLimit - feedsUsed);
+		if (!unlimitedFeeding && sessionRemaining <= 0) {
 			return res.status(400).json({ error: 'Fish needs to rest before feeding again.' });
 		}
 
@@ -637,11 +716,11 @@ router.post('/feed', async (req, res) => {
 			if (requestedAmount <= 0) {
 				return res.status(400).json({ error: 'Specify a positive amount of food to feed.' });
 			}
-			const allowedAmount = Math.min(requestedAmount, sessionRemaining);
+			const allowedAmount = unlimitedFeeding ? requestedAmount : Math.min(requestedAmount, sessionRemaining);
 			if (allowedAmount <= 0) {
 				return res.status(400).json({ error: 'Feed limit reached. Wait for cooldown.' });
 			}
-			const actionResult = performFeedAction({ fish, config, progress, amountCap: allowedAmount });
+			const actionResult = performFeedAction({ fish, config, progress, amountCap: unlimitedFeeding ? undefined : allowedAmount });
 			if (!actionResult.success) {
 				finalError = actionResult;
 			} else {
@@ -649,16 +728,18 @@ router.post('/feed', async (req, res) => {
 				totalFoodFed += fedUnits;
 				totalLevelsGained += actionResult.levelsGained;
 				feedsPerformed += 1;
-				feedsUsed = Math.min(MAX_FEEDS_PER_SESSION, feedsUsed + fedUnits);
-				fish.feedsUsed = feedsUsed;
-				sessionRemaining = Math.max(0, MAX_FEEDS_PER_SESSION - feedsUsed);
+				if (!unlimitedFeeding) {
+					feedsUsed = Math.min(feedLimit, feedsUsed + fedUnits);
+					fish.feedsUsed = feedsUsed;
+					sessionRemaining = Math.max(0, feedLimit - feedsUsed);
+				}
 				stateChanged = true;
 			}
 		} else {
 			const sanitizedFeedCount = Math.max(1, Math.min(MAX_FEEDS_PER_SESSION, Math.floor(feedCount)));
 			let actionsRemaining = sanitizedFeedCount;
-			while (actionsRemaining > 0 && sessionRemaining > 0) {
-				const actionResult = performFeedAction({ fish, config, progress, amountCap: sessionRemaining });
+			while (actionsRemaining > 0 && (unlimitedFeeding || sessionRemaining > 0)) {
+				const actionResult = performFeedAction({ fish, config, progress, amountCap: unlimitedFeeding ? undefined : sessionRemaining });
 				if (!actionResult.success) {
 					finalError = actionResult;
 					break;
@@ -667,12 +748,14 @@ router.post('/feed', async (req, res) => {
 				totalFoodFed += fedUnits;
 				totalLevelsGained += actionResult.levelsGained;
 				feedsPerformed += 1;
-				feedsUsed = Math.min(MAX_FEEDS_PER_SESSION, feedsUsed + fedUnits);
-				fish.feedsUsed = feedsUsed;
+				if (!unlimitedFeeding) {
+					feedsUsed = Math.min(feedLimit, feedsUsed + fedUnits);
+					fish.feedsUsed = feedsUsed;
+				}
 				stateChanged = true;
-				sessionRemaining = Math.max(0, MAX_FEEDS_PER_SESSION - feedsUsed);
+				sessionRemaining = unlimitedFeeding ? Infinity : Math.max(0, feedLimit - feedsUsed);
 				actionsRemaining -= 1;
-				if (fish.level >= MAX_LEVEL || feedsUsed >= MAX_FEEDS_PER_SESSION) {
+				if (fish.level >= MAX_LEVEL || (!unlimitedFeeding && feedsUsed >= feedLimit)) {
 					break;
 				}
 			}
@@ -716,21 +799,23 @@ router.post('/feed', async (req, res) => {
 			fish.feedProgress = 0;
 			fish.feedsUsed = 0;
 			feedsUsed = 0;
-		} else if (feedsUsed >= MAX_FEEDS_PER_SESSION) {
+		} else if (!unlimitedFeeding && feedsUsed >= feedLimit) {
 			fish.cooldownEndsAt = new Date(now.getTime() + FEED_COOLDOWN_SEC * 1000);
 			cooldownStarted = true;
 		} else {
 			fish.cooldownEndsAt = null;
 		}
 
-		sessionRemaining = Math.max(0, MAX_FEEDS_PER_SESSION - feedsUsed);
+		sessionRemaining = unlimitedFeeding ? Infinity : Math.max(0, feedLimit - feedsUsed);
 		stateChanged = true;
 
 		user.markModified('fishesProgress');
 		await user.save();
 
+		const responseSessionRemaining = unlimitedFeeding ? null : sessionRemaining;
 		return res.json(buildStatusPayload(progress, {
 			now,
+			upgradeState,
 			extra: {
 				feedResult: {
 					foodFed: totalFoodFed,
@@ -738,8 +823,8 @@ router.post('/feed', async (req, res) => {
 					feedsPerformed,
 					newLevel: fish.level,
 					feedProgress: fish.feedProgress,
-					sessionFeedsUsed: feedsUsed,
-					sessionFeedsRemaining: sessionRemaining,
+					sessionFeedsUsed: unlimitedFeeding ? null : feedsUsed,
+					sessionFeedsRemaining: responseSessionRemaining,
 					cooldownStarted,
 					cooldownEndsAt: fish.cooldownEndsAt ? fish.cooldownEndsAt.toISOString() : null
 				},
@@ -767,9 +852,10 @@ router.post('/buy', async (req, res) => {
 		}
 
 		const now = new Date();
-		ensureFishesProgress(user);
-		applyShopRestock(user.fishesProgress, now);
-		refreshFishCooldowns(user.fishesProgress, now);
+		const upgradeState = getFishesUpgradeState(user);
+		ensureFishesProgress(user, upgradeState);
+		applyShopRestock(user.fishesProgress, now, upgradeState);
+		refreshFishCooldowns(user.fishesProgress, now, upgradeState);
 
 		const progress = user.fishesProgress;
 		const config = getFishConfig(fishType);
@@ -785,8 +871,9 @@ router.post('/buy', async (req, res) => {
 			? progress.shopPurchases
 			: toPurchaseMap(progress.shopPurchases);
 
+		const unlimitedStock = Boolean(upgradeState.flags.noStockTimer);
 		const bought = Number(purchases.get(config.key) || 0);
-		if (bought >= config.restockLimit) {
+		if (!unlimitedStock && bought >= config.restockLimit) {
 			return res.status(400).json({ error: 'Purchase limit reached for this fish type until restock.' });
 		}
 
@@ -804,6 +891,7 @@ router.post('/buy', async (req, res) => {
 
 		return res.json(buildStatusPayload(progress, {
 			now,
+			upgradeState,
 			extra: {
 				message: `${config.name} added to the aquarium.`
 			}
@@ -828,9 +916,10 @@ router.post('/sell', async (req, res) => {
 		}
 
 		const now = new Date();
-		ensureFishesProgress(user);
-		applyShopRestock(user.fishesProgress, now);
-		refreshFishCooldowns(user.fishesProgress, now);
+		const upgradeState = getFishesUpgradeState(user);
+		ensureFishesProgress(user, upgradeState);
+		applyShopRestock(user.fishesProgress, now, upgradeState);
+		refreshFishCooldowns(user.fishesProgress, now, upgradeState);
 
 		const progress = user.fishesProgress;
 		const index = findFishIndex(progress, fishId);
@@ -860,6 +949,7 @@ router.post('/sell', async (req, res) => {
 
 		return res.json(buildStatusPayload(progress, {
 			now,
+			upgradeState,
 			extra: {
 				sale: {
 					fishType: config.key,
@@ -888,13 +978,15 @@ router.post('/expand', async (req, res) => {
 		}
 
 		const now = new Date();
-		ensureFishesProgress(user);
-		applyShopRestock(user.fishesProgress, now);
-		refreshFishCooldowns(user.fishesProgress, now);
+		const upgradeState = getFishesUpgradeState(user);
+		ensureFishesProgress(user, upgradeState);
+		applyShopRestock(user.fishesProgress, now, upgradeState);
+		refreshFishCooldowns(user.fishesProgress, now, upgradeState);
 
 		const progress = user.fishesProgress;
+ 		const aquariumLimit = upgradeState.aquariumLimit ?? MAX_AQUARIUM_SIZE;
 
-		if (progress.aquariumSize >= MAX_AQUARIUM_SIZE) {
+		if (Number.isFinite(aquariumLimit) && progress.aquariumSize >= aquariumLimit) {
 			return res.status(400).json({ error: 'Aquarium is already at maximum capacity.' });
 		}
 
@@ -902,7 +994,7 @@ router.post('/expand', async (req, res) => {
 			return res.status(400).json({ error: 'Fill all current slots before expanding the aquarium.' });
 		}
 
-		const cost = getExpansionCost(progress.aquariumSize);
+		const cost = getExpansionCost(progress.aquariumSize, { maxSize: aquariumLimit });
 		if (cost === null) {
 			return res.status(400).json({ error: 'Aquarium cannot be expanded further.' });
 		}
@@ -919,6 +1011,7 @@ router.post('/expand', async (req, res) => {
 
 		return res.json(buildStatusPayload(progress, {
 			now,
+			upgradeState,
 			extra: {
 				message: `Aquarium expanded to ${progress.aquariumSize} slots.`
 			}
@@ -945,9 +1038,10 @@ router.post('/buy_food', async (req, res) => {
 		}
 
 		const now = new Date();
-		ensureFishesProgress(user);
-		applyShopRestock(user.fishesProgress, now);
-		refreshFishCooldowns(user.fishesProgress, now);
+		const upgradeState = getFishesUpgradeState(user);
+		ensureFishesProgress(user, upgradeState);
+		applyShopRestock(user.fishesProgress, now, upgradeState);
+		refreshFishCooldowns(user.fishesProgress, now, upgradeState);
 
 		const progress = user.fishesProgress;
 		const cost = quantity * FOOD_COST_COINS;
@@ -964,6 +1058,7 @@ router.post('/buy_food', async (req, res) => {
 
 		return res.json(buildStatusPayload(progress, {
 			now,
+			upgradeState,
 			extra: {
 				message: `Purchased ${quantity} food for ${cost.toLocaleString()} coins.`
 			}
@@ -988,9 +1083,10 @@ router.post('/collect_free_food', async (req, res) => {
 		}
 
 		const now = new Date();
-		ensureFishesProgress(user);
-		applyShopRestock(user.fishesProgress, now);
-		refreshFishCooldowns(user.fishesProgress, now);
+		const upgradeState = getFishesUpgradeState(user);
+		ensureFishesProgress(user, upgradeState);
+		applyShopRestock(user.fishesProgress, now, upgradeState);
+		refreshFishCooldowns(user.fishesProgress, now, upgradeState);
 
 		const progress = user.fishesProgress;
 		const freeFoodInfo = buildFreeFoodPayload(progress, now);
@@ -1007,6 +1103,7 @@ router.post('/collect_free_food', async (req, res) => {
 
 		return res.json(buildStatusPayload(progress, {
 			now,
+			upgradeState,
 			extra: {
 				message: `Collected ${freeFoodInfo.amount} free food.`
 			}

@@ -28,7 +28,8 @@ TIERS.forEach(tier => {
 });
 
 const FAST_MODE = process.env.FAST_MODE === 'true';
-const GROWTH_TIME_SEC = FAST_MODE ? 30 : 12 * 60 * 60; // 30s testing / 12h normal
+const DEFAULT_GROWTH_TIME_SEC = FAST_MODE ? 30 : 12 * 60 * 60; // 30s testing / 12h normal
+const ACCELERATED_GROWTH_TIME_SEC = FAST_MODE ? 5 : 5 * 60; // 5s testing / 5m normal
 const MAX_BUY_LEVEL = FAST_MODE ? 50 : 46;
 const SPECIAL_INVENTORY_LIMIT = FAST_MODE ? Infinity : 10;
 
@@ -104,6 +105,18 @@ const SPECIAL_COLLECTION_MULTIPLIERS = {
   golden: 2.0
 };
 
+function hasAcceleratedGrowth(user) {
+  return Boolean(user?.catChessUpgrades?.acceleratedGrowth);
+}
+
+function getCatChessUpgradeState(user) {
+  const acceleratedGrowth = hasAcceleratedGrowth(user);
+  return {
+    growthTimeSec: acceleratedGrowth ? ACCELERATED_GROWTH_TIME_SEC : DEFAULT_GROWTH_TIME_SEC,
+    upgrades: { acceleratedGrowth }
+  };
+}
+
 // Helper functions
 function isLegacyRegularCat(cell) {
   return cell && typeof cell.level === 'number' && cell.level > 0 && !cell.kind;
@@ -142,7 +155,7 @@ function normalizeBoardCell(cell) {
   return null;
 }
 
-function computeCatGrowth(cat, nowSec) {
+function computeCatGrowth(cat, nowSec, growthTimeSec = DEFAULT_GROWTH_TIME_SEC) {
   if (!cat || cat.kind !== 'cat') {
     return { grown: false, timeLeft: 0 };
   }
@@ -152,14 +165,14 @@ function computeCatGrowth(cat, nowSec) {
   }
 
   if (!cat.timerStart) {
-    return { grown: false, timeLeft: GROWTH_TIME_SEC };
+    return { grown: false, timeLeft: growthTimeSec };
   }
   const startSec = Math.floor(new Date(cat.timerStart).getTime() / 1000);
   const elapsed = nowSec - startSec;
-  if (elapsed >= GROWTH_TIME_SEC) {
+  if (elapsed >= growthTimeSec) {
     return { grown: true, timeLeft: 0 };
   }
-  return { grown: false, timeLeft: GROWTH_TIME_SEC - elapsed };
+  return { grown: false, timeLeft: growthTimeSec - elapsed };
 }
 
 function getBuffMultiplier(type, form = 'common') {
@@ -268,7 +281,8 @@ async function getUser(username) {
   return await User.findByUsername(username);
 }
 
-function serializeBoardCell(cell, nowSec) {
+function serializeBoardCell(cell, nowSec, options = {}) {
+  const growthTimeSec = options.growthTimeSec || DEFAULT_GROWTH_TIME_SEC;
   if (!cell) return null;
   if (cell.kind === 'cat' || isLegacyRegularCat(cell)) {
     const normalizedCat = cell.kind === 'cat' ? cell : {
@@ -276,7 +290,7 @@ function serializeBoardCell(cell, nowSec) {
       level: cell.level,
       timerStart: cell.timerStart ? new Date(cell.timerStart) : null
     };
-    const growth = computeCatGrowth(normalizedCat, nowSec);
+    const growth = computeCatGrowth(normalizedCat, nowSec, growthTimeSec);
     return {
       kind: 'cat',
       level: normalizedCat.level,
@@ -335,18 +349,19 @@ function normalizeSpecialInventoryCat(cat) {
   };
 }
 
-function buildProgressPayload(progress, { includeSuccess = false, extra = null } = {}) {
+function buildProgressPayload(progress, { includeSuccess = false, extra = null, growthTimeSec = DEFAULT_GROWTH_TIME_SEC, upgrades = null } = {}) {
   const nowSec = Math.floor(Date.now() / 1000);
   return {
     ...(includeSuccess ? { success: true } : {}),
     ...(extra && typeof extra === 'object' ? extra : {}),
     coins: progress.coins,
     specialCurrency: progress.specialCurrency,
-    board: progress.board.map(cell => serializeBoardCell(cell, nowSec)),
+    board: progress.board.map(cell => serializeBoardCell(cell, nowSec, { growthTimeSec })),
     unlockedLevels: [...progress.unlockedLevels].sort((a, b) => a - b),
     specialInventory: progress.specialInventory.map(cat => serializeSpecialCat(cat)).filter(cat => cat),
     sellBonuses: progress.sellBonuses ? { ...progress.sellBonuses } : {},
-    inventoryLimit: Number.isFinite(SPECIAL_INVENTORY_LIMIT) ? SPECIAL_INVENTORY_LIMIT : null
+    inventoryLimit: Number.isFinite(SPECIAL_INVENTORY_LIMIT) ? SPECIAL_INVENTORY_LIMIT : null,
+    upgrades: upgrades || { acceleratedGrowth: false }
   };
 }
 
@@ -470,7 +485,11 @@ router.get('/status/:username', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
-    res.json(buildProgressPayload(progress));
+    const upgradeState = getCatChessUpgradeState(user);
+    res.json(buildProgressPayload(progress, {
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess status error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -563,7 +582,13 @@ router.post('/buy', async (req, res) => {
     user.markModified('catChessProgress.coins');
     await user.save();
     const extra = specialCoinsSpent > 0 ? { specialCoinsSpent } : null;
-    res.json(buildProgressPayload(progress, { includeSuccess: true, extra }));
+    const upgradeState = getCatChessUpgradeState(user);
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      extra,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess buy error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -578,6 +603,7 @@ router.post('/sell', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const index = Number(cellIndex);
     if (!Number.isInteger(index) || index < 0 || index >= progress.board.length) {
       return res.status(400).json({ error: 'Invalid cell index' });
@@ -598,7 +624,7 @@ router.post('/sell', async (req, res) => {
     }
 
     const nowSec = Math.floor(Date.now() / 1000);
-    const growth = computeCatGrowth(normalizedCat, nowSec);
+    const growth = computeCatGrowth(normalizedCat, nowSec, upgradeState.growthTimeSec);
     if (!growth.grown) return res.status(400).json({ error: 'Cat not grown yet' });
 
     const sellPrice = CAT_LEVELS[normalizedCat.level].sellPrice;
@@ -615,7 +641,11 @@ router.post('/sell', async (req, res) => {
     user.markModified('catChessProgress.board');
     user.markModified('catChessProgress.coins');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess sell error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -630,6 +660,7 @@ router.post('/sell_all', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const nowSec = Math.floor(Date.now() / 1000);
 
     let totalCoinsEarned = 0;
@@ -657,7 +688,7 @@ router.post('/sell_all', async (req, res) => {
         return;
       }
 
-      const growth = computeCatGrowth(normalizedCat, nowSec);
+      const growth = computeCatGrowth(normalizedCat, nowSec, upgradeState.growthTimeSec);
       if (!growth.grown) {
         notReadyCount += 1;
         return;
@@ -698,7 +729,11 @@ router.post('/sell_all', async (req, res) => {
       await user.save();
     }
     res.json({
-      ...buildProgressPayload(progress, { includeSuccess: true }),
+      ...buildProgressPayload(progress, {
+        includeSuccess: true,
+        growthTimeSec: upgradeState.growthTimeSec,
+        upgrades: upgradeState.upgrades
+      }),
       soldCount,
       soldIndices,
       coinsEarned: totalCoinsEarned,
@@ -719,6 +754,7 @@ router.post('/merge', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
 
     const from = Number(fromIndex);
     const to = Number(toIndex);
@@ -769,17 +805,17 @@ router.post('/merge', async (req, res) => {
     } else {
       const nowMs = Date.now();
       const nowSec = Math.floor(nowMs / 1000);
-      const fromGrowth = computeCatGrowth({ kind: 'cat', level: fromCell.level, timerStart: fromCell.timerStart }, nowSec);
-      const toGrowth = computeCatGrowth({ kind: 'cat', level: toCell.level, timerStart: toCell.timerStart }, nowSec);
+      const fromGrowth = computeCatGrowth({ kind: 'cat', level: fromCell.level, timerStart: fromCell.timerStart }, nowSec, upgradeState.growthTimeSec);
+      const toGrowth = computeCatGrowth({ kind: 'cat', level: toCell.level, timerStart: toCell.timerStart }, nowSec, upgradeState.growthTimeSec);
       const maxTimeLeft = Math.max(fromGrowth.timeLeft, toGrowth.timeLeft);
 
       let timerStart;
       if (maxTimeLeft <= 0) {
-        timerStart = new Date(nowMs - GROWTH_TIME_SEC * 1000);
-      } else if (maxTimeLeft >= GROWTH_TIME_SEC) {
+        timerStart = new Date(nowMs - upgradeState.growthTimeSec * 1000);
+      } else if (maxTimeLeft >= upgradeState.growthTimeSec) {
         timerStart = new Date(nowMs);
       } else {
-        const elapsed = GROWTH_TIME_SEC - maxTimeLeft;
+        const elapsed = upgradeState.growthTimeSec - maxTimeLeft;
         timerStart = new Date(nowMs - elapsed * 1000);
       }
 
@@ -816,7 +852,11 @@ router.post('/merge', async (req, res) => {
 
     user.markModified('catChessProgress.board');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess merge error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -831,6 +871,7 @@ router.post('/sell_special', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const hasCellIndex = cellIndex !== undefined && cellIndex !== null;
     const hasInventoryIndex = inventoryIndex !== undefined && inventoryIndex !== null;
 
@@ -860,7 +901,11 @@ router.post('/sell_special', async (req, res) => {
       user.markModified('catChessProgress.specialInventory');
       user.markModified('catChessProgress.specialCurrency');
       await user.save();
-      return res.json(buildProgressPayload(progress, { includeSuccess: true }));
+      return res.json(buildProgressPayload(progress, {
+        includeSuccess: true,
+        growthTimeSec: upgradeState.growthTimeSec,
+        upgrades: upgradeState.upgrades
+      }));
     }
 
     const index = Number(cellIndex);
@@ -908,7 +953,11 @@ router.post('/sell_special', async (req, res) => {
       user.markModified('catChessProgress.sellBonuses');
     }
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess sell special error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -923,6 +972,7 @@ router.post('/move', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
 
     const from = Number(fromIndex);
     const to = Number(toIndex);
@@ -952,7 +1002,11 @@ router.post('/move', async (req, res) => {
 
     user.markModified('catChessProgress.board');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess move error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -967,6 +1021,7 @@ router.post('/swap', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
 
     const from = Number(fromIndex);
     const to = Number(toIndex);
@@ -1010,7 +1065,11 @@ router.post('/swap', async (req, res) => {
 
     user.markModified('catChessProgress.board');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess swap error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1025,6 +1084,7 @@ router.post('/convert_to_special', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     if (!hasInventoryCapacity(progress, { add: 1 })) {
       return res.status(400).json({ error: 'Special inventory full' });
     }
@@ -1075,7 +1135,11 @@ router.post('/convert_to_special', async (req, res) => {
     user.markModified('catChessProgress.board');
     user.markModified('catChessProgress.specialInventory');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess convert to special error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1090,6 +1154,7 @@ router.post('/sell_collection', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const requiredTypes = Object.keys(SPECIAL_CAT_TYPES);
 
     const inventoryEntries = progress.specialInventory
@@ -1190,7 +1255,11 @@ router.post('/sell_collection', async (req, res) => {
 
     await user.save();
     res.json({
-      ...buildProgressPayload(progress, { includeSuccess: true }),
+      ...buildProgressPayload(progress, {
+        includeSuccess: true,
+        growthTimeSec: upgradeState.growthTimeSec,
+        upgrades: upgradeState.upgrades
+      }),
       soldCollectionForm: targetForm,
       payout
     });
@@ -1212,6 +1281,7 @@ router.post('/merge_gold', async (req, res) => {
     }
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const inventoryMatches = progress.specialInventory
       .map((cat, index) => (cat && cat.type === type && cat.form === 'common')
         ? { index, cat }
@@ -1294,7 +1364,11 @@ router.post('/merge_gold', async (req, res) => {
 
     await user.save();
     res.json({
-      ...buildProgressPayload(progress, { includeSuccess: true }),
+      ...buildProgressPayload(progress, {
+        includeSuccess: true,
+        growthTimeSec: upgradeState.growthTimeSec,
+        upgrades: upgradeState.upgrades
+      }),
       mergedType: type,
       inventoryConsumed: removalIndices.length,
       boardConsumed: selectedBoard.length
@@ -1313,6 +1387,7 @@ router.post('/upgrade_special', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     if (!SPECIAL_CAT_TYPES[type]) {
       return res.status(400).json({ error: 'Unknown special cat type' });
     }
@@ -1338,7 +1413,11 @@ router.post('/upgrade_special', async (req, res) => {
 
     user.markModified('catChessProgress.specialInventory');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess upgrade special error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1353,6 +1432,7 @@ router.post('/move_special', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const from = Number(fromIndex);
     const to = Number(toIndex);
 
@@ -1412,7 +1492,11 @@ router.post('/move_special', async (req, res) => {
 
     user.markModified('catChessProgress.board');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess move special error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1427,6 +1511,7 @@ router.post('/place_special', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const index = Number(cellIndex);
     if (!Number.isInteger(index) || index < 0 || index >= progress.board.length) {
       return res.status(400).json({ error: 'Invalid cell index' });
@@ -1461,7 +1546,11 @@ router.post('/place_special', async (req, res) => {
     user.markModified('catChessProgress.specialInventory');
     user.markModified('catChessProgress.sellBonuses');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess place special error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1476,6 +1565,7 @@ router.post('/pickup_special', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const progress = await ensureCatChessProgress(user);
+    const upgradeState = getCatChessUpgradeState(user);
     const index = Number(cellIndex);
     if (!Number.isInteger(index) || index < 0 || index >= progress.board.length) {
       return res.status(400).json({ error: 'Invalid cell index' });
@@ -1508,7 +1598,11 @@ router.post('/pickup_special', async (req, res) => {
     user.markModified('catChessProgress.specialInventory');
     user.markModified('catChessProgress.sellBonuses');
     await user.save();
-    res.json(buildProgressPayload(progress, { includeSuccess: true }));
+    res.json(buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    }));
   } catch (error) {
     console.error('Cat Chess pickup special error:', error);
     res.status(500).json({ error: 'Internal server error' });

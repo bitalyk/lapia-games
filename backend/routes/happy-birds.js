@@ -13,24 +13,70 @@ const BIRDS = {
   purple: { cost: 500000, eps: 50, eggsPerCoin: 10,  label: "Purple" },
 };
 
-const SIX_HOURS_SEC = process.env.FAST_MODE === 'true' ? 30 : 6 * 60 * 60; // 30s testing / 6h normal
-const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 * 1000 : 60 * 60 * 1000; // 10s testing / 1h normal
+const BASE_COLLECTION_CAP_SEC = process.env.FAST_MODE === 'true' ? 30 : 6 * 60 * 60; // 30s testing / 6h normal
+const BASE_TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 * 1000 : 60 * 60 * 1000; // 10s testing / 1h normal
+const PREMIUM_TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 5 * 1000 : 5 * 60 * 1000;
 
 // Helper functions
-function computeProducedSince(productionStart, birds) {
-  if (!productionStart) return {};
+function getCollectionCapSeconds(user) {
+  if (user?.happyBirdsUpgrades?.autoCollect) {
+    return null;
+  }
+  return BASE_COLLECTION_CAP_SEC;
+}
+
+function getTruckTravelTime(user) {
+  if (user?.happyBirdsUpgrades?.helicopterTransport) {
+    return PREMIUM_TRUCK_TRAVEL_TIME;
+  }
+  return BASE_TRUCK_TRAVEL_TIME;
+}
+
+function autoCollectEggs(user) {
+  if (!user?.happyBirdsUpgrades?.autoCollect || !user.productionStart) {
+    return null;
+  }
+
+  if (!user.eggs || typeof user.eggs !== 'object') {
+    user.eggs = {};
+  }
+
+  const referenceTime = user.lastSaveTime || user.productionStart;
+  const { produced } = computeProducedSince(referenceTime, user.birds, null);
+  if (!produced || Object.keys(produced).length === 0) {
+    return null;
+  }
+  const total = Object.values(produced).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  if (total <= 0) {
+    return null;
+  }
+
+  Object.entries(produced).forEach(([color, amount]) => {
+    if (amount > 0) {
+      user.eggs[color] = (user.eggs[color] || 0) + amount;
+    }
+  });
+  user.lastSaveTime = new Date();
+  user.markModified('eggs');
+  return produced;
+}
+
+function computeProducedSince(productionStart, birds, capSeconds = BASE_COLLECTION_CAP_SEC) {
+  if (!productionStart) return { produced: {}, seconds: 0 };
 
   const nowSec = Math.floor(Date.now() / 1000);
   const startSec = Math.floor(new Date(productionStart).getTime() / 1000);
   let seconds = nowSec - startSec;
-  if (seconds > SIX_HOURS_SEC) seconds = SIX_HOURS_SEC;
+  if (typeof capSeconds === 'number' && capSeconds > 0 && seconds > capSeconds) {
+    seconds = capSeconds;
+  }
 
   const produced = {};
   for (const color of Object.keys(BIRDS)) {
     const count = (birds && birds[color]) ? birds[color] : 0;
     produced[color] = Math.floor(count * BIRDS[color].eps * seconds);
   }
-  return produced;
+  return { produced, seconds };
 }
 
 async function getUser(username) {
@@ -56,20 +102,26 @@ router.get("/status/:username", async (req, res) => {
     }
 
     // Handle truck travel completion
+    const travelDuration = getTruckTravelTime(user);
     if (user.truckLocation === 'traveling_to_city' && user.truckDepartureTime) {
       const travelTime = Date.now() - user.truckDepartureTime.getTime();
-      if (travelTime >= TRUCK_TRAVEL_TIME) { // 1 hour (or 10s in fast mode)
+      if (travelTime >= travelDuration) {
         user.truckLocation = 'city';
         user.truckDepartureTime = null;
         await user.save();
       }
     } else if (user.truckLocation === 'traveling_to_farm' && user.truckDepartureTime) {
       const travelTime = Date.now() - user.truckDepartureTime.getTime();
-      if (travelTime >= TRUCK_TRAVEL_TIME) { // 1 hour (or 10s in fast mode)
+      if (travelTime >= travelDuration) {
         user.truckLocation = 'farm';
         user.truckDepartureTime = null;
         await user.save();
       }
+    }
+
+    const autoCollected = autoCollectEggs(user);
+    if (autoCollected) {
+      await user.save();
     }
 
     res.json({
@@ -104,6 +156,12 @@ router.post("/collect", async (req, res) => {
       return res.status(400).json({ error: "Buy a bird to start production." });
     }
 
+    if (user.happyBirdsUpgrades?.autoCollect) {
+      const autoCollected = autoCollectEggs(user) || {};
+      await user.save();
+      return res.json({ success: true, collected: autoCollected, eggs: user.eggs, autoCollect: true });
+    }
+
     const lastCollectTime = user.lastSaveTime || user.productionStart;
     const nowSec = Math.floor(Date.now() / 1000);
     const lastCollectSec = Math.floor(new Date(lastCollectTime).getTime() / 1000);
@@ -112,8 +170,9 @@ router.post("/collect", async (req, res) => {
     if (seconds <= 0) {
       return res.json({ success: true, collected: {}, eggs: user.eggs });
     }
-    if (seconds > SIX_HOURS_SEC) {
-      seconds = SIX_HOURS_SEC;
+    const capSeconds = getCollectionCapSeconds(user);
+    if (typeof capSeconds === 'number' && capSeconds > 0 && seconds > capSeconds) {
+      seconds = capSeconds;
     }
 
     const collected = {};
@@ -290,7 +349,7 @@ router.post("/buy", async (req, res) => {
 
     // Save current progress before buying to minimize free eggs for new bird
     if (user.lastSaveTime) {
-      const { produced } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
+      const { produced } = computeProducedSince(user.lastSaveTime, user.birds, getCollectionCapSeconds(user));
       user.savedProduced = produced;
       user.lastSaveTime = new Date();
     }
@@ -328,7 +387,7 @@ router.get("/live/:username", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const { produced, seconds } = computeProducedSince(user.lastSaveTime, user.savedProduced, user.birds);
+    const { produced, seconds } = computeProducedSince(user.lastSaveTime, user.birds, getCollectionCapSeconds(user));
     res.json({ produced, seconds });
   } catch (err) {
     console.error("Live error:", err);

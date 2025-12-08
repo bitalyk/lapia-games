@@ -7,6 +7,7 @@ const GAME_KEY_MAP = {
 };
 
 const GAME_IDS = Object.keys(GAME_KEY_MAP);
+const CONVERSION_COST_PER_GAME = 100;
 
 const ACHIEVEMENT_DEFINITIONS = {
   welcome: { key: 'welcome', name: 'Welcome', reward: 0, type: 'system' },
@@ -362,7 +363,7 @@ class AchievementManager {
 
     GAME_IDS.forEach((gameId) => {
       const amount = clampNumber(accessors[gameId].get());
-      const available = Math.floor(amount / 1000);
+      const available = Math.floor(amount / CONVERSION_COST_PER_GAME);
       if (available < capacity) {
         capacity = available;
       }
@@ -398,7 +399,7 @@ class AchievementManager {
       GAME_IDS.forEach((gameId) => {
         const accessor = accessors[gameId];
         const current = clampNumber(accessor.get());
-        accessor.set(current - 1000);
+        accessor.set(current - CONVERSION_COST_PER_GAME);
       });
       user.lpaBalance += 1;
     }

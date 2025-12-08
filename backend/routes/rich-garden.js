@@ -18,7 +18,23 @@ const GARDEN_SIZE = 10;
 // Production constants
 const PRODUCTION_TIME = process.env.FAST_MODE === 'true' ? 30 : 4 * 60 * 60; // 30s testing / 4h normal
 const COLLECTION_TIME = process.env.FAST_MODE === 'true' ? 15 : 30 * 60; // 15s testing / 30min normal
-const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 : 60 * 60; // 10s testing / 1h normal
+const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 : 60 * 60; // legacy constant
+const PREMIUM_TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 3 : 5 * 60;
+
+function getTruckTravelTime(user) {
+    if (user?.richGardenUpgrades?.helicopterTransport) {
+        return PREMIUM_TRUCK_TRAVEL_TIME;
+    }
+    return TRUCK_TRAVEL_TIME;
+}
+
+function hasGardenAutoCollect(user) {
+    return Boolean(user?.richGardenUpgrades?.autoCollect);
+}
+
+function getPremiumUnlockLevel(user) {
+    return Number(user?.richGardenUpgrades?.premiumUnlockLevel) || 0;
+}
 
 function getTimingConfig() {
     return {
@@ -88,15 +104,16 @@ function buildGardenView(garden = [], now = new Date()) {
     return view;
 }
 
-function buildTruckView(progress = {}, now = new Date()) {
+function buildTruckView(progress = {}, now = new Date(), options = {}) {
     const rawLocation = progress.truckLocation || 'farm';
     const departureTime = ensureDate(progress.truckDepartureTime);
     const traveling = rawLocation === 'traveling_to_city' || rawLocation === 'traveling_to_farm';
+    const travelTarget = typeof options.travelTime === 'number' ? options.travelTime : TRUCK_TRAVEL_TIME;
 
     let secondsRemaining = 0;
     if (traveling && departureTime) {
         const elapsed = Math.floor((now - departureTime) / 1000);
-        secondsRemaining = Math.max(0, TRUCK_TRAVEL_TIME - elapsed);
+        secondsRemaining = Math.max(0, travelTarget - elapsed);
     }
 
     let location = rawLocation;
@@ -115,8 +132,10 @@ function buildTruckView(progress = {}, now = new Date()) {
 
 function buildGamePayload(progress = {}, options = {}) {
     const now = options.now || new Date();
+    const autoCollect = Boolean(options.autoCollect);
+    const travelTime = typeof options.travelTime === 'number' ? options.travelTime : TRUCK_TRAVEL_TIME;
     const gardenView = buildGardenView(progress.garden || [], now);
-    const truckView = buildTruckView(progress, now);
+    const truckView = buildTruckView(progress, now, { travelTime });
     const inventorySource = progress.inventory || {};
     const inventory = typeof inventorySource.toObject === 'function'
         ? inventorySource.toObject()
@@ -141,15 +160,30 @@ function buildGamePayload(progress = {}, options = {}) {
         truck,
         truckLocation: truck.location,
         truckDepartureTime: truck.departureTime,
-        timers: getTimingConfig(),
+        timers: {
+            ...getTimingConfig(),
+            truckTravel: travelTime
+        },
         treeTypes: TREE_TYPES,
+        upgrades: {
+            autoCollect
+        },
         ...options.extras
     };
 }
 
-function synchronizeGardenState(progress = {}, now = new Date()) {
+function buildUserGardenResponse(user, options = {}) {
+    const now = options.now || new Date();
+    const autoCollect = hasGardenAutoCollect(user);
+    const travelTime = getTruckTravelTime(user);
+    const extras = options.extras || {};
+    return buildGamePayload(user.richGardenProgress, { now, extras, autoCollect, travelTime });
+}
+
+function synchronizeGardenState(progress = {}, now = new Date(), options = {}) {
     const collected = {};
     let modified = false;
+    const autoCollect = Boolean(options.autoCollect);
 
     if (!progress) {
         return { modified, collected };
@@ -231,6 +265,21 @@ function synchronizeGardenState(progress = {}, now = new Date()) {
                 tree.timeLeft = PRODUCTION_TIME - elapsed;
             }
         }
+
+        if (autoCollect && tree.state === 'ready') {
+            const treeType = TREE_TYPES[tree.type];
+            if (treeType) {
+                const fruitsProduced = treeType.fps * PRODUCTION_TIME;
+                progress.inventory[tree.type] = (progress.inventory[tree.type] || 0) + fruitsProduced;
+                collected[tree.type] = (collected[tree.type] || 0) + fruitsProduced;
+                tree.state = 'producing';
+                tree.collectionStartTime = null;
+                tree.plantedAt = now;
+                tree.timeLeft = PRODUCTION_TIME;
+                tree.lastCollected = now;
+                modified = true;
+            }
+        }
     }
 
     return { modified, collected };
@@ -246,13 +295,14 @@ async function updateTruckStatus(user) {
     const departureTime = new Date(rgData.truckDepartureTime);
     const now = new Date();
     const elapsed = Math.floor((now - departureTime) / 1000);
+    const travelTime = getTruckTravelTime(user);
     let truckArrived = false;
 
-    if (rgData.truckLocation === 'traveling_to_city' && elapsed >= TRUCK_TRAVEL_TIME) {
+    if (rgData.truckLocation === 'traveling_to_city' && elapsed >= travelTime) {
         rgData.truckLocation = 'city';
         rgData.truckDepartureTime = null;
         truckArrived = true;
-    } else if (rgData.truckLocation === 'traveling_to_farm' && elapsed >= TRUCK_TRAVEL_TIME) {
+    } else if (rgData.truckLocation === 'traveling_to_farm' && elapsed >= travelTime) {
         rgData.truckLocation = 'farm';
         rgData.truckDepartureTime = null;
         truckArrived = true;
@@ -294,7 +344,9 @@ router.get('/status/:username', async (req, res) => {
 
         await updateTruckStatus(user);
 
-        const syncResult = synchronizeGardenState(user.richGardenProgress, now);
+        const autoCollect = hasGardenAutoCollect(user);
+        const travelTime = getTruckTravelTime(user);
+        const syncResult = synchronizeGardenState(user.richGardenProgress, now, { autoCollect });
         if (syncResult.modified) {
             user.markModified('richGardenProgress');
             await user.save();
@@ -305,8 +357,7 @@ router.get('/status/:username', async (req, res) => {
             extras.collected = syncResult.collected;
         }
 
-        const rgData = user.richGardenProgress;
-        return res.json(buildGamePayload(rgData, { now, extras }));
+        return res.json(buildUserGardenResponse(user, { now, extras }));
 
     } catch (error) {
         console.error('Rich Garden status error:', error);
@@ -372,7 +423,7 @@ router.post('/buy_tree', async (req, res) => {
         user.markModified('richGardenProgress');
         await user.save();
 
-        return res.json(buildGamePayload(rgData, { now: new Date() }));
+        return res.json(buildUserGardenResponse(user, { now: new Date() }));
 
     } catch (error) {
         console.error('Buy tree error:', error);
@@ -418,21 +469,23 @@ router.post('/upgrade_tree', async (req, res) => {
 
         const nextLevel = currentLevel + 1;
 
-        // New upgrade logic:
-        // Find the highest level tree currently owned
-        const maxOwnedLevel = Math.max(...rgData.garden.filter(t => t).map(t => TREE_TYPES[t.type].level));
+        const ownedLevels = rgData.garden
+            .filter(t => t)
+            .map(t => TREE_TYPES[t.type]?.level || 0);
+        const maxOwnedLevel = ownedLevels.length > 0
+            ? Math.max(...ownedLevels)
+            : currentLevel;
+        const premiumUnlockLevel = getPremiumUnlockLevel(user);
+        const bypassRequirement = premiumUnlockLevel >= nextLevel;
 
-        // Check if trying to upgrade to a level higher than currently owned
-        if (nextLevel > maxOwnedLevel) {
-            // To unlock a new level, need 10 trees at the previous level
-            const prevLevelTrees = rgData.garden.filter(t => t && TREE_TYPES[t.type].level === currentLevel).length;
+        if (nextLevel > maxOwnedLevel && !bypassRequirement) {
+            const prevLevelTrees = rgData.garden.filter(t => t && TREE_TYPES[t.type]?.level === currentLevel).length;
             if (prevLevelTrees < 10) {
                 return res.status(400).json({
                     error: `To unlock ${Object.values(TREE_TYPES).find(t => t.level === nextLevel)?.name || 'next level'}, you need 10 trees at ${TREE_TYPES[tree.type].name} level first.`
                 });
             }
         }
-        // If upgrading to a level you already own, or unlocking a new level with 10 prev level trees, allow it
 
         const nextType = Object.values(TREE_TYPES).find(t => t.level === currentLevel + 1);
         if (rgData.coins < nextType.cost) {
@@ -447,7 +500,7 @@ router.post('/upgrade_tree', async (req, res) => {
         user.markModified('richGardenProgress');
         await user.save();
 
-        return res.json(buildGamePayload(rgData, { now: new Date() }));
+        return res.json(buildUserGardenResponse(user, { now: new Date() }));
 
     } catch (error) {
         console.error('Upgrade tree error:', error);
@@ -475,7 +528,8 @@ router.post('/collect_tree', async (req, res) => {
         }
 
         const now = new Date();
-        const syncResult = synchronizeGardenState(rgData, now);
+        const autoCollect = hasGardenAutoCollect(user);
+        const syncResult = synchronizeGardenState(rgData, now, { autoCollect });
         const fruitsAdded = { ...syncResult.collected };
 
         const treeToCollect = rgData.garden[cellIndex];
@@ -501,7 +555,7 @@ router.post('/collect_tree', async (req, res) => {
             extras.collected = fruitsAdded;
         }
 
-        return res.json(buildGamePayload(rgData, { now, extras }));
+        return res.json(buildUserGardenResponse(user, { now, extras }));
 
     } catch (error) {
         console.error('Collect tree error:', error);
@@ -525,7 +579,8 @@ router.post('/load_truck', async (req, res) => {
         }
 
         const now = new Date();
-        const syncResult = synchronizeGardenState(rgData, now);
+        const autoCollect = hasGardenAutoCollect(user);
+        const syncResult = synchronizeGardenState(rgData, now, { autoCollect });
         await updateTruckStatus(user);
 
         if (rgData.truckLocation !== 'farm') {
@@ -565,7 +620,7 @@ router.post('/load_truck', async (req, res) => {
         }
         extras.loaded = loaded;
 
-        return res.json(buildGamePayload(rgData, { now, extras }));
+        return res.json(buildUserGardenResponse(user, { now, extras }));
 
     } catch (error) {
         console.error('Load truck error:', error);
@@ -594,13 +649,14 @@ router.post('/send_truck', async (req, res) => {
             return res.status(400).json({ error: 'Truck is not at farm' });
         }
 
+        const now = new Date();
         rgData.truckLocation = 'traveling_to_city';
-        rgData.truckDepartureTime = new Date();
+        rgData.truckDepartureTime = now;
 
         user.markModified('richGardenProgress');
         await user.save();
 
-        return res.json(buildGamePayload(rgData, { now: new Date() }));
+        return res.json(buildUserGardenResponse(user, { now }));
 
     } catch (error) {
         console.error('Send truck error:', error);
@@ -624,7 +680,8 @@ router.post('/sell_fruits', async (req, res) => {
         }
 
         const now = new Date();
-        const syncResult = synchronizeGardenState(rgData, now);
+        const autoCollect = hasGardenAutoCollect(user);
+        const syncResult = synchronizeGardenState(rgData, now, { autoCollect });
         await updateTruckStatus(user); // Ensure truck status is updated
 
         if (rgData.truckLocation !== 'city') {
@@ -685,7 +742,7 @@ router.post('/sell_fruits', async (req, res) => {
             extras.collected = syncResult.collected;
         }
 
-        return res.json(buildGamePayload(rgData, { now, extras }));
+        return res.json(buildUserGardenResponse(user, { now, extras }));
 
     } catch (error) {
         console.error('Sell fruits error:', error);
@@ -714,13 +771,14 @@ router.post('/return_truck', async (req, res) => {
             return res.status(400).json({ error: 'Truck must be at city to return' });
         }
 
+        const now = new Date();
         rgData.truckLocation = 'traveling_to_farm';
-        rgData.truckDepartureTime = new Date();
+        rgData.truckDepartureTime = now;
 
         user.markModified('richGardenProgress');
         await user.save();
 
-        return res.json(buildGamePayload(rgData, { now: new Date() }));
+        return res.json(buildUserGardenResponse(user, { now }));
 
     } catch (error) {
         console.error('Return truck error:', error);

@@ -6,12 +6,23 @@ const EXCHANGE_GAME_CONFIG = [
     { id: 'fishes', statusKey: 'fishes', label: 'Fishes', icon: '🐟' }
 ];
 
-const CONVERSION_REQUIREMENT = 1000;
+const CONVERSION_REQUIREMENT = 100;
+const SNAPSHOT_TTL = 10000;
+const CATALOG_TTL = 12000;
+
+const PURCHASE_ERROR_MESSAGES = {
+    ITEM_NOT_FOUND: 'This item is no longer available.',
+    INSUFFICIENT_LPA: 'You do not have enough LPA coins for this purchase.',
+    ALREADY_PURCHASED: 'You already own this upgrade.',
+    UNAVAILABLE: 'This offer is currently unavailable. Please try again later.'
+};
 
 export class ShopUI {
     constructor() {
         this.isInitialized = false;
         this.isUpdating = false; // ✅ Флаг для предотвращения рекурсии
+        this.activeTab = 'marketplace';
+        this.pendingTab = 'marketplace';
         this.conversionModal = null;
         this.conversionState = { max: 0, amount: 0 };
         this.onAchievementUpdate = () => this.handleAchievementUpdate();
@@ -20,6 +31,14 @@ export class ShopUI {
         this.exchangeSnapshot = null;
         this.exchangeSnapshotFetchedAt = 0;
         this.exchangeSnapshotPromise = null;
+        this.catalogSnapshot = null;
+        this.catalogSnapshotFetchedAt = 0;
+        this.catalogSnapshotPromise = null;
+        this.purchaseInFlight = new Set();
+        this.marketplacePanel = null;
+        this.exchangePanel = null;
+        this.tabButtons = [];
+        this.boundDocumentClickHandler = null;
         this.init();
     }
 
@@ -30,14 +49,29 @@ export class ShopUI {
 
         try {
             await this.loadHTMLTemplate();
+            this.cacheDomRefs();
             this.bindEvents();
             this.isInitialized = true;
+            this.switchTab(this.pendingTab || this.activeTab);
             
             // ✅ Обновляем display только один раз при инициализации
             await this.safeUpdateDisplay({ forceRefresh: true });
         } catch (error) {
             console.error('ShopUI init failed:', error);
         }
+    }
+
+    cacheDomRefs() {
+        const root = document.getElementById('shop-container');
+        if (!root) {
+            this.marketplacePanel = null;
+            this.exchangePanel = null;
+            this.tabButtons = [];
+            return;
+        }
+        this.marketplacePanel = root.querySelector('[data-tab-panel="marketplace"]');
+        this.exchangePanel = root.querySelector('[data-tab-panel="exchange"]');
+        this.tabButtons = Array.from(root.querySelectorAll('[data-tab-target]'));
     }
 
     // Загрузка HTML шаблона магазина
@@ -99,8 +133,11 @@ export class ShopUI {
         try {
             const { forceRefresh = false } = options;
             const refreshed = await this.updateBalances({ forceServerRefresh: forceRefresh });
-            const shouldForce = forceRefresh && !refreshed;
-            await this.renderExchange({ forceRefresh: shouldForce });
+            const shouldForceExchange = forceRefresh && !refreshed;
+            await Promise.allSettled([
+                this.renderMarketplace({ forceRefresh }),
+                this.renderExchange({ forceRefresh: shouldForceExchange })
+            ]);
         } catch (error) {
             console.error('Error in safeUpdateDisplay:', error);
         } finally {
@@ -113,21 +150,66 @@ export class ShopUI {
 
     // Привязка событий
     bindEvents() {
-        // ✅ Используем делегирование событий вместо множественных обработчиков
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('open-conversion-dialog')) {
+        if (this.boundDocumentClickHandler) {
+            document.removeEventListener('click', this.boundDocumentClickHandler);
+        }
+
+        this.boundDocumentClickHandler = (e) => {
+            const target = e.target;
+            if (!target) {
+                return;
+            }
+
+            const shopRoot = document.getElementById('shop-container');
+            if (!shopRoot) {
+                return;
+            }
+
+            const conversionTrigger = target.closest('.open-conversion-dialog');
+            if (conversionTrigger && shopRoot.contains(conversionTrigger)) {
                 e.preventDefault();
                 this.openConversionDialog().catch(() => {
                     /* noop */
                 });
                 return;
             }
-            
-            if (e.target.id === 'close-shop-btn') {
+
+            const closeBtn = target.closest('#close-shop-btn');
+            if (closeBtn && shopRoot.contains(closeBtn)) {
+                e.preventDefault();
                 this.hide();
                 return;
             }
-        });
+
+            const tabButton = target.closest('[data-tab-target]');
+            if (tabButton && shopRoot.contains(tabButton)) {
+                e.preventDefault();
+                const tabId = tabButton.dataset.tabTarget;
+                if (tabId) {
+                    this.switchTab(tabId);
+                }
+                return;
+            }
+
+            const refreshBtn = target.closest('[data-action="refresh-catalog"]');
+            if (refreshBtn && shopRoot.contains(refreshBtn)) {
+                e.preventDefault();
+                this.invalidateCatalogSnapshot();
+                this.renderMarketplace({ forceRefresh: true }).catch(() => {
+                    /* noop */
+                });
+                return;
+            }
+
+            const purchaseBtn = target.closest('[data-action="purchase-item"]');
+            if (purchaseBtn && shopRoot.contains(purchaseBtn)) {
+                e.preventDefault();
+                this.handlePurchaseClick(purchaseBtn);
+            }
+        };
+
+        // ✅ Используем делегирование событий вместо множественных обработчиков
+        document.addEventListener('click', this.boundDocumentClickHandler, { once: false });
 
         // ✅ ОДИН обработчик для currencyUpdate
         if (!this.currencyHandler) {
@@ -145,6 +227,352 @@ export class ShopUI {
         window.removeEventListener('achievementStatusUpdated', this.onAchievementUpdate);
         window.addEventListener('achievementStatusUpdated', this.onAchievementUpdate, { once: false });
     }
+
+    switchTab(tabId = 'marketplace') {
+        if (!tabId) {
+            return;
+        }
+        this.activeTab = tabId;
+        this.pendingTab = tabId;
+        if (!this.isInitialized) {
+            return;
+        }
+        this.updateTabState();
+        if (tabId === 'exchange') {
+            this.renderExchange({ forceRefresh: false }).catch(() => {
+                /* noop */
+            });
+        } else {
+            this.renderMarketplace({ forceRefresh: false }).catch(() => {
+                /* noop */
+            });
+        }
+    }
+
+    updateTabState() {
+        this.cacheDomRefs();
+        this.tabButtons.forEach((button) => {
+            const isActive = button.dataset.tabTarget === this.activeTab;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-selected', String(isActive));
+        });
+
+        const panels = [
+            { panel: this.marketplacePanel, id: 'marketplace' },
+            { panel: this.exchangePanel, id: 'exchange' }
+        ];
+
+        panels.forEach(({ panel, id }) => {
+            if (!panel) {
+                return;
+            }
+            const isVisible = this.activeTab === id;
+            panel.hidden = !isVisible;
+            panel.setAttribute('aria-hidden', String(!isVisible));
+        });
+    }
+
+    handlePurchaseClick(button) {
+        if (!button || button.disabled) {
+            return;
+        }
+        const itemId = button.dataset.itemId;
+        if (!itemId) {
+            return;
+        }
+        this.purchaseItem(itemId, button).catch(() => {
+            /* noop */
+        });
+    }
+
+    async purchaseItem(itemId, button) {
+        if (!itemId) {
+            return;
+        }
+        const username = this.getUsername();
+        if (!username) {
+            this.showNotification('Please sign in to purchase upgrades.', 'error');
+            return;
+        }
+        if (this.purchaseInFlight.has(itemId)) {
+            return;
+        }
+
+        this.purchaseInFlight.add(itemId);
+        const originalLabel = button ? button.textContent : '';
+        if (button) {
+            button.disabled = true;
+            button.dataset.loading = 'true';
+            button.dataset.defaultLabel = originalLabel;
+            button.textContent = 'Processing...';
+        }
+
+        try {
+            const response = await fetch(`${this.getApiBase()}/platform/shop/purchase`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, itemId })
+            });
+
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (_error) {
+                data = {};
+            }
+
+            if (!response.ok || !data.success) {
+                const errorCode = data?.error || `HTTP_${response.status}`;
+                throw new Error(errorCode);
+            }
+
+            this.invalidateCatalogSnapshot();
+            await this.renderMarketplace({ forceRefresh: true });
+            await this.renderExchange({ forceRefresh: true });
+
+            if (window.authManager?.refreshAchievementStatus) {
+                try {
+                    await window.authManager.refreshAchievementStatus({ silent: true });
+                } catch (refreshError) {
+                    console.warn('Failed to refresh achievements after purchase:', refreshError);
+                }
+            }
+
+            const itemName = button?.dataset?.itemName || itemId;
+            this.showNotification(`Purchased ${itemName}!`, 'success');
+        } catch (error) {
+            console.error('Purchase failed:', error);
+            const message = this.resolvePurchaseError(error?.message);
+            this.showNotification(message, 'error');
+        } finally {
+            this.purchaseInFlight.delete(itemId);
+            if (button) {
+                button.disabled = false;
+                button.dataset.loading = 'false';
+                const restore = button.dataset.defaultLabel || 'Purchase';
+                button.textContent = restore;
+            }
+        }
+    }
+    // Рендер магазина
+    async renderMarketplace({ forceRefresh = false } = {}) {
+        const container = this.marketplacePanel || document.getElementById('marketplace-tab');
+        if (!container) {
+            return;
+        }
+
+        const username = this.getUsername();
+        if (!username) {
+            container.innerHTML = `
+                <div class="shop-empty">
+                    <p>Sign in to browse the cross-game LPA marketplace.</p>
+                </div>
+            `;
+            return;
+        }
+
+        if (forceRefresh) {
+            this.invalidateCatalogSnapshot();
+        }
+
+        container.innerHTML = `
+            <div class="shop-loading">
+                <p>Loading marketplace...</p>
+            </div>
+        `;
+
+        try {
+            const snapshot = await this.fetchCatalog({ force: forceRefresh });
+            container.innerHTML = this.buildMarketplaceMarkup(snapshot);
+        } catch (error) {
+            console.error('Error rendering marketplace:', error);
+            const message = this.escapeHtml(error.message || 'Server unavailable');
+            container.innerHTML = `
+                <div class="shop-error">
+                    <h4>Unable to load the marketplace</h4>
+                    <p>${message}</p>
+                    <button class="shop-try-again" data-action="refresh-catalog" type="button">Try again</button>
+                </div>
+            `;
+        }
+    }
+
+    buildMarketplaceMarkup(snapshot = {}) {
+        const catalog = Array.isArray(snapshot?.catalog) ? snapshot.catalog : [];
+        const sections = catalog.length
+            ? catalog.map((section) => this.renderCatalogSection(section)).join('')
+            : '<div class="shop-empty"><p>No LPA marketplace entries are available right now.</p></div>';
+
+        const historyMarkup = this.buildPurchaseHistory(snapshot?.purchaseHistory);
+        const lpaBalance = Math.max(
+            0,
+            snapshot?.lpaBalance
+            ?? window.authManager?.achievementStatus?.lpaBalance
+            ?? window.authManager?.currentUser?.lpaBalance
+            ?? 0
+        );
+
+        return `
+            <div class="marketplace-header">
+                <div>
+                    <p class="shop-eyebrow">Cross-game catalog</p>
+                    <h3>Upgrade every world instantly</h3>
+                    <p>Purchases sync with the backend and unlock upgrades the moment you load each game.</p>
+                </div>
+                <div class="header-meta">
+                    <div class="balance-chip">
+                        <span>LPA Balance</span>
+                        <strong>${this.formatNumber(lpaBalance)}</strong>
+                    </div>
+                    <button class="refresh-catalog" type="button" data-action="refresh-catalog">Refresh</button>
+                </div>
+            </div>
+            <div class="marketplace-grid">
+                ${sections}
+            </div>
+            ${historyMarkup}
+        `;
+    }
+
+    renderCatalogSection(section = {}) {
+        const items = Array.isArray(section.items) ? section.items : [];
+        const icon = this.escapeHtml(section.icon || '🛒');
+        const title = this.escapeHtml(section.label || section.game || 'Game');
+        const subtitle = `${items.length || 0} offer${items.length === 1 ? '' : 's'}`;
+        const itemMarkup = items.length
+            ? items.map((item) => this.renderShopItem(item)).join('')
+            : '<div class="shop-empty"><p>No offers available for this game.</p></div>';
+
+        return `
+            <section class="game-shop-card">
+                <header class="game-shop-header">
+                    <div class="game-shop-icon">${icon}</div>
+                    <div>
+                        <h4>${title}</h4>
+                        <p>${this.escapeHtml(subtitle)}</p>
+                    </div>
+                </header>
+                <div class="shop-item-grid">
+                    ${itemMarkup}
+                </div>
+            </section>
+        `;
+    }
+
+    renderShopItem(item = {}) {
+        const status = item.status || {};
+        const maxPurchase = typeof status.maxPurchase === 'number' ? status.maxPurchase : -1;
+        const purchased = typeof status.purchased === 'number' ? status.purchased : 0;
+        const soldOut = Boolean(status.soldOut);
+        const type = (item.type || 'item').toLowerCase();
+        const chipLabel = type === 'upgrade' ? 'Upgrade' : 'Bundle';
+        const chipClass = type === 'upgrade' ? 'item-chip item-chip--upgrade' : 'item-chip';
+        const ownedLabel = maxPurchase >= 0
+            ? `${Math.min(purchased, maxPurchase)} / ${maxPurchase} owned`
+            : purchased > 0
+                ? `${purchased} owned`
+                : 'Unlimited purchases';
+        const buttonDisabled = soldOut || this.purchaseInFlight.has(item.id);
+        const isLoading = this.purchaseInFlight.has(item.id);
+        const buttonLabel = soldOut
+            ? 'Owned'
+            : isLoading
+                ? 'Processing...'
+                : `Buy for ${this.formatNumber(item.lpaCost || 0)} LPA`;
+
+        const description = item.description || 'Instantly applied to your save.';
+        const disabledReason = status.disabledReason ? `<small>${this.escapeHtml(status.disabledReason)}</small>` : '';
+
+        return `
+            <article class="shop-item-card" data-state="${soldOut ? 'sold-out' : 'available'}">
+                <span class="${chipClass}">${this.escapeHtml(chipLabel)}</span>
+                <h5>${this.escapeHtml(item.name || item.id || 'Mystery item')}</h5>
+                <p>${this.escapeHtml(description)}</p>
+                <div class="item-meta">
+                    <div><span>Price</span> <strong>${this.formatNumber(item.lpaCost || 0)} LPA</strong></div>
+                    <div>${this.escapeHtml(ownedLabel)}</div>
+                </div>
+                ${disabledReason}
+                <button
+                    class="shop-action-btn"
+                    type="button"
+                    data-action="purchase-item"
+                    data-item-id="${this.escapeHtml(item.id || '')}"
+                    data-item-name="${this.escapeHtml(item.name || item.id || '')}"
+                    data-default-label="${this.escapeHtml(buttonLabel)}"
+                    data-loading="${String(isLoading)}"
+                    ${buttonDisabled ? 'disabled' : ''}
+                >
+                    ${this.escapeHtml(buttonLabel)}
+                </button>
+            </article>
+        `;
+    }
+
+    buildPurchaseHistory(history = []) {
+        if (!Array.isArray(history) || history.length === 0) {
+            return '';
+        }
+
+        const recent = history.slice(-5).reverse();
+        const items = recent.map((entry) => {
+            const date = entry?.purchasedAt ? new Date(entry.purchasedAt) : null;
+            const formattedDate = date && !Number.isNaN(date.getTime())
+                ? date.toLocaleString()
+                : 'Just now';
+            const icon = this.resolveGameIcon(entry?.game);
+            const label = this.escapeHtml(entry?.itemId || 'Unknown purchase');
+            const cost = this.formatNumber(entry?.lpaCost || 0);
+            return `
+                <li class="purchase-history__item">
+                    <span class="purchase-history__icon">${icon}</span>
+                    <div>
+                        <strong>${label}</strong>
+                        <div>${cost} LPA • ${this.escapeHtml(formattedDate)}</div>
+                    </div>
+                </li>
+            `;
+        }).join('');
+
+        return `
+            <div class="purchase-history">
+                <div class="purchase-history__header">
+                    <div>
+                        <p class="shop-eyebrow">Latest purchases</p>
+                        <h4>History</h4>
+                    </div>
+                    <button class="refresh-catalog" type="button" data-action="refresh-catalog">Sync</button>
+                </div>
+                <ul class="purchase-history__list">${items}</ul>
+            </div>
+        `;
+    }
+
+    resolveGameIcon(gameId) {
+        if (!gameId) {
+            return '🛒';
+        }
+        const entry = EXCHANGE_GAME_CONFIG.find((game) => game.id === gameId);
+        return entry?.icon || '🛒';
+    }
+
+    resolvePurchaseError(code) {
+        if (!code) {
+            return 'Purchase failed. Please try again later.';
+        }
+        const normalized = String(code || '').trim();
+        if (/failed to fetch/i.test(normalized)) {
+            return 'Network error. Please check your connection and try again.';
+        }
+        if (PURCHASE_ERROR_MESSAGES[normalized]) {
+            return PURCHASE_ERROR_MESSAGES[normalized];
+        }
+        if (normalized.startsWith('HTTP_')) {
+            return 'Purchase failed. Please try again later.';
+        }
+        return 'Purchase failed. Please try again later.';
+    }
+
     // Рендер обмена валют
     async renderExchange({ forceRefresh = false } = {}) {
         const container = document.getElementById('exchange-tab');
@@ -239,7 +667,7 @@ export class ShopUI {
                         <button class="open-conversion-dialog" ${canConvert ? '' : 'disabled'}>
                             ${conversionLabel}
                         </button>
-                        <p class="exchange-hint">${isStatusLoaded ? 'You need 1,000 coins in every game for each conversion.' : 'Achievement data is loading...'}</p>
+                        <p class="exchange-hint">${isStatusLoaded ? 'You need 100 coins in every game for each conversion.' : 'Achievement data is loading...'}</p>
                     </div>
                 </div>
             `;
@@ -254,9 +682,15 @@ export class ShopUI {
         this.exchangeSnapshotFetchedAt = 0;
     }
 
+    invalidateCatalogSnapshot() {
+        this.catalogSnapshot = null;
+        this.catalogSnapshotFetchedAt = 0;
+        this.catalogSnapshotPromise = null;
+    }
+
     async fetchExchangeSnapshot({ force = false } = {}) {
         const now = Date.now();
-        const maxAge = 10000;
+        const maxAge = SNAPSHOT_TTL;
 
         if (!force && this.exchangeSnapshot && (now - this.exchangeSnapshotFetchedAt) < maxAge) {
             return this.exchangeSnapshot;
@@ -304,6 +738,45 @@ export class ShopUI {
             this.exchangeSnapshotPromise = null;
             throw error;
         }
+    }
+
+    async fetchCatalog({ force = false } = {}) {
+        const username = this.getUsername();
+        if (!username) {
+            throw new Error('Login required');
+        }
+
+        const now = Date.now();
+        if (!force && this.catalogSnapshot && (now - this.catalogSnapshotFetchedAt) < CATALOG_TTL) {
+            return this.catalogSnapshot;
+        }
+
+        if (this.catalogSnapshotPromise) {
+            return this.catalogSnapshotPromise;
+        }
+
+        const url = `${this.getApiBase()}/platform/shop/catalog/${encodeURIComponent(username)}`;
+
+        const fetchPromise = (async () => {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to load catalog (${response.status})`);
+            }
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Unable to load catalog');
+            }
+            this.catalogSnapshot = data;
+            this.catalogSnapshotFetchedAt = Date.now();
+            this.catalogSnapshotPromise = null;
+            return data;
+        })().catch((error) => {
+            this.catalogSnapshotPromise = null;
+            throw error;
+        });
+
+        this.catalogSnapshotPromise = fetchPromise;
+        return fetchPromise;
     }
 
     resolveGameBalance(game, context = {}) {
@@ -378,6 +851,9 @@ export class ShopUI {
             this.exchangeSnapshotFetchedAt = Date.now();
         }
         this.renderExchange({ forceRefresh: false }).catch(() => {
+            /* noop */
+        });
+        this.renderMarketplace({ forceRefresh: false }).catch(() => {
             /* noop */
         });
     }
@@ -498,7 +974,9 @@ export class ShopUI {
 
         const achievementsOverlay = document.querySelector('.achievement-overlay');
         const achievementOpen = achievementsOverlay && !achievementsOverlay.classList.contains('hidden');
-        if (!achievementOpen) {
+        const shopContainer = document.getElementById('shop-container');
+        const shopOpen = shopContainer && shopContainer.style.display !== 'none';
+        if (!achievementOpen && !shopOpen) {
             document.body.classList.remove('modal-open');
         }
     }
@@ -575,6 +1053,8 @@ export class ShopUI {
         const shopContainer = document.getElementById('shop-container');
         if (shopContainer) {
             shopContainer.style.display = 'block';
+            document.body.classList.add('modal-open');
+            this.switchTab(this.activeTab);
             try {
                 await this.safeUpdateDisplay({ forceRefresh: true });
             } catch (_error) {
@@ -588,6 +1068,13 @@ export class ShopUI {
         const shopContainer = document.getElementById('shop-container');
         if (shopContainer) {
             shopContainer.style.display = 'none';
+        }
+        const conversionOverlay = document.querySelector('.conversion-overlay');
+        const conversionOpen = conversionOverlay && !conversionOverlay.classList.contains('hidden');
+        const achievementsOverlay = document.querySelector('.achievement-overlay');
+        const achievementOpen = achievementsOverlay && !achievementsOverlay.classList.contains('hidden');
+        if (!conversionOpen && !achievementOpen) {
+            document.body.classList.remove('modal-open');
         }
     }
 
@@ -607,6 +1094,10 @@ export class ShopUI {
             window.removeEventListener('currencyUpdate', this.currencyHandler);
         }
         window.removeEventListener('achievementStatusUpdated', this.onAchievementUpdate);
+        if (this.boundDocumentClickHandler) {
+            document.removeEventListener('click', this.boundDocumentClickHandler);
+            this.boundDocumentClickHandler = null;
+        }
         
         const shopContainer = document.getElementById('shop-container');
         if (shopContainer) {
@@ -618,6 +1109,35 @@ export class ShopUI {
             this.conversionModal = null;
             this.conversionElements = null;
         }
+    }
+
+    getApiBase() {
+        return window.authManager?.API_BASE || 'http://localhost:3000/api';
+    }
+
+    getUsername() {
+        return window.authManager?.currentUser?.username || null;
+    }
+
+    formatNumber(value) {
+        const numeric = Number(value);
+        if (Number.isNaN(numeric) || !Number.isFinite(numeric)) {
+            return '0';
+        }
+        return Math.max(0, Math.floor(numeric)).toLocaleString();
+    }
+
+    escapeHtml(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value).replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char] || char));
     }
 }
 

@@ -3,77 +3,54 @@
 Welcome to the `lapia-games` repository! This document provides essential guidance for AI coding agents to be productive in this codebase. Follow these instructions to understand the architecture, workflows, and conventions.
 
 ## Big Picture Overview
-- **Backend**: Located in `backend/`, the server (`server.js`) is an Express app that:
-  - Serves a REST API under `/api`.
-  - Serves static files from `frontend/`.
-  - Runs background jobs for progress saving every 30 seconds.
-- **Database**: MongoDB is used for persistence, configured in `backend/db.js`. Default URI: `mongodb://127.0.0.1:27017/lapia-games`.
-- **Frontend**: A static single-page application in `frontend/` communicates with the backend API. Individual games are in `frontend/games/` (e.g., `happy-birds/`, `rich-garden/`).
-- **Game Logic**: Core game mechanics (e.g., bird production, egg collection, tree farming) are implemented in backend routes (`backend/routes/happy-birds.js`, `backend/routes/rich-garden.js`) and frontend game modules (`frontend/games/happy-birds/game.js`, `frontend/games/rich-garden/game.js`).
+- **Backend**: `backend/server.js` boots an Express API, serves the static frontend, and schedules autosave jobs every 30 seconds. Routes live under `backend/routes/*.js` (auth, achievements, platform, plus one file per game). Services in `backend/services/` (e.g., `achievement-manager.js`, `promo-code-manager.js`) encapsulate shared logic.
+- **Database**: MongoDB via `backend/db.js`. `User` schema (`backend/models/user.js`) stores everything: per-game progress, trucks, inventories, promo history, streaks, and achievements.
+- **Frontend**: Static SPA in `frontend/`. `index.html` loads `AuthManager`, `GameManager`, promo widget, toast manager, and the shop overlay. Each game ships its own HTML/CSS/JS bundle in `frontend/games/<game-id>/`.
+- **Game Logic Split**: Each mechanic (birds, trees, mines, etc.) has mirrored config on the backend route and in the corresponding frontend module. Update both copies (e.g., `BIRDS`, `TREE_TYPES`, truck travel constants) to keep offline calculations in sync.
 
 ## Key Conventions & Patterns
-- **Bird/Egg Configuration**: The `BIRDS` object defines bird types and production rules. It is duplicated in `backend/routes/happy-birds.js` and `frontend/games/happy-birds/game.js`. Keep these in sync.
-- **Tree/Fruit Configuration**: The `TREE_TYPES` object defines tree types and production rules. It is duplicated in `backend/routes/rich-garden.js` and `frontend/games/rich-garden/game.js`. Keep these in sync.
-- **Time Window**: Production is capped at 6 hours (`SIX_HOURS_SEC`) for Happy Birds, 4 hours for Rich Garden trees.
-- **Toast Notifications**: Use the shared `toastManager` in `frontend/js/toast-manager.js` (and `window.showToast`) for all user-facing notifications across the platform. Avoid bespoke per-game toast implementations unless the manager is explicitly unavailable.
-- **User Identification**: The `username` field is the primary identifier. Most endpoints expect `{ username }` in the request body or path.
-- **Password Security**: Passwords are hashed with `bcrypt` and stored as `passwordHash`.
-- **Truck System**: For both games, goods must be loaded into truck at farm, truck travels to city (1 hour), goods sold at city for coins, purchases made only at city, truck returns to farm (1 hour). Production continues during travel.
-- **Progress Saving**: Server automatically saves user progress every 30 seconds. Client calculates real-time production, server handles persistence.
-- **Game Features**: Includes redeem bar for codes (e.g., `SKIPTIMER`, `GROWTH`) when `ENABLE_REDEEM=true`, truck delivery system (1-hour travel between farm and city), timer UI for production and truck travel, inventory for boosts/cosmetics.
+- **Duplicated Config**: Keep `BIRDS`, `TREE_TYPES`, truck timings, and similar constants aligned between backend routes and the mirrored frontend files. Never change one side without the other.
+- **Promo Widget**: All promo UIs use `PromoRedeemWidget` (`frontend/js/promo-manager.js`). It expects `/api/promo/redeem` + `/api/promo/history/:username` to exist and only renders the most recent 10 successful codes.
+- **Auth & Identification**: Every gameplay endpoint accepts `{ username }`. `AuthManager` caches the session locally; backend routes always revalidate state.
+- **Achievements**: Call `AchievementManager.recordActivity(user)` whenever a login occurs (already wired in `auth.js`). Client pulls `/api/achievements/status/:username` for the modal and exchange tabs.
+- **Toast Notifications**: Use `window.toastManager.show(message, type)` or `window.showToast` fallback. Avoid bespoke notification code per game.
+- **Truck System**: Happy Birds and Rich Garden enforce a truck-at-farm requirement for loading and a one-hour travel per leg. Timers continue server-side; frontend merely visualizes them.
+- **App Reveal**: `body` starts with `app-loading`. Do not remove the class until AuthManager completes session checks.
 
-## Developer Workflows
-- **Run Locally**:
-  1. Install dependencies: `npm install`
-  2. Start the server: `npm start` (runs `node backend/server.js`)
-  3. Ensure MongoDB is running at the default URI or set `MONGO_URI`.
-- **Logging**: Server logs provide critical information (e.g., MongoDB connection, errors). Look for messages like:
-  - `✅ Connected to MongoDB`
-  - `✅ Server running on http://localhost:3000`
-  - Progress save logs every 30 seconds.
+## Developer Workflow
+1. `npm install`
+2. `npm start` (runs `node backend/server.js`)
+3. Ensure MongoDB is available at `MONGO_URI` (defaults to local).
 
-## API Examples
-- **User Management**:
-  - `POST /api/users/register`: Register a new user.
-  - `POST /api/users/login`: Log in an existing user.
-- **Happy Birds Endpoints** (in `backend/routes/happy-birds.js`):
-  - `GET /api/game/status/:username`: Retrieve game status (includes data validation).
-  - `POST /api/game/collect`: Collect eggs (fails if 6 hours not passed, with corruption checks).
-  - `POST /api/game/sell`: Sell eggs for coins.
-  - `POST /api/game/buy`: Buy a bird (sets production start if first bird).
-  - `POST /api/game/redeem`: Redeem a code (e.g., `SKIPTIMER`).
-- **Rich Garden Endpoints** (in `backend/routes/rich-garden.js`):
-  - `GET /api/rich-garden/status/:username`: Retrieve garden status.
-  - `POST /api/rich-garden/buy_tree`: Buy a tree in specified cell.
-  - `POST /api/rich-garden/upgrade_tree`: Upgrade tree to next level.
-  - `POST /api/rich-garden/collect_tree`: Collect fruits from ready tree.
-  - `POST /api/rich-garden/send_truck`: Send truck to city.
-  - `POST /api/rich-garden/sell_fruits`: Sell fruits for coins.
-  - `POST /api/rich-garden/return_truck`: Return truck to farm.
-  - `POST /api/rich-garden/redeem`: Redeem a code (e.g., `GROWTH`).
-- **Platform Endpoints** (in `backend/routes/platform.js`):
-  - For multi-game platform features.
+While running, watch the console for:
+- `✅ Connected to MongoDB`
+- `✅ Server running on http://localhost:3000`
+- Autosave logs every 30 seconds
 
-## Project-Specific Notes
-- **Router Files**: Game logic is in `backend/routes/happy-birds.js`, auth in `auth.js`, users in `users.js`, platform in `platform.js`, rich garden in `rich-garden.js`. Main server setup in `backend/server.js`.
-- **Database Schemas**: User model includes sub-schemas for Rich Garden (`treeSchema`, `richGardenInventorySchema`, `richGardenProgressSchema`) and Happy Birds data structures.
-- **ESM**: The project uses ES modules (`"type": "module"` in `package.json`). Use `import/export` syntax.
-- **Static Frontend**: The frontend is a static SPA. Game-specific logic in `frontend/games/[game-name]/game.js`, styles in `style.css`, HTML in `index.html`.
-- **User Model**: Extended with `productionStart`, `lastSaveTime`, `savedProduced`, `redeemedCodes`, `platformStats`, `platformCurrencies`, `gamesProgress`, `richGardenProgress`, `inventory`, `settings`.
-- **Login Reveal**: The body starts with the `app-loading` class to hide UI until `AuthManager` finishes session validation. Keep new UI components compatible with that flow.
+## Core Endpoints
+- **Auth** (`backend/routes/auth.js`): `POST /api/auth/register`, `POST /api/auth/login`.
+- **Achievements** (`backend/routes/achievements.js`): `GET /api/achievements/status/:username`, `POST /api/achievements/record-activity`, `POST /api/achievements/convert`, `POST /api/achievements/record-invite`.
+- **Promo Codes** (`backend/routes/promo-codes.js`): `POST /api/promo/redeem`, `GET /api/promo/history/:username` (returns latest 10 successes).
+- **Game Routers**: `happy-birds.js`, `rich-garden.js`, `golden-mine.js`, `cat-chess.js`, `fishes.js` each expose status + action endpoints specific to their gameplay loop.
+- **Platform** (`backend/routes/platform.js`): shared stats + profile helpers.
 
-## Integration Points
-- **MongoDB**: Ensure the database is running and accessible. Use the `MONGO_URI` environment variable to override the default URI.
-- **Frontend-Backend Communication**: The frontend communicates with the backend at `http://localhost:3000/api`. Configuration is loaded from `/api/config` endpoint.
-- **Background Jobs**: Progress saving runs every 30 seconds in `server.js`, with data validation to handle corruption.
+## Project Notes
+- Express app runs as an ES module. Stick to `import` / `export` syntax.
+- `User` schema is large—when mutating nested docs (e.g., `richGardenProgress`, `inventory`, `activityStreak`), always `markModified` if needed.
+- `AuthManager` controls most global UI state (login page, achievements modal, promo widget, exchange). Sync any new UI component with its event system.
+- Background autosave + `progressSanityCheck` prevent corrupted state; never bypass the helpers when editing backend routes.
+- When editing CSS/HTML, keep the new login-only layout (single centered card) in mind.
 
-## Common Gotchas
-- **Syncing `BIRDS`**: Always update both `backend/routes/happy-birds.js` and `frontend/games/happy-birds/game.js` when modifying bird configurations.
-- **Syncing `TREE_TYPES`**: Always update both `backend/routes/rich-garden.js` and `frontend/games/rich-garden/game.js` when modifying tree configurations.
-- **Data Shape Assumptions**: Ensure `birds`, `eggs`, and `savedProduced` objects include all expected keys (e.g., `red`, `blue`). Validation resets corrupted data to empty objects.
-- **Time Logic**: Production starts on first bird purchase. Background saves prevent data loss but may cause UI jumps; client-side calculation handles real-time updates.
-- **Golden Mine Timing**: Backend `backend/routes/golden-mine.js` now advances mines through rest/production cycles server-side. When adjusting timers, update both constants and the `advanceMineState` helper so offline progress stays accurate.
-- **Data Corruption**: Routes and background saver include checks for corrupted objects; auto-reset to prevent Mongoose errors.
-- **Game Separation**: Each game (e.g., happy-birds, rich-garden) has its own directory with game.js, index.html, style.css for modularity.
+## Integration Checklist
+- MongoDB reachable at `MONGO_URI`.
+- Frontend fetches under `http://localhost:3000/api/*`.
+- `/api/config` exposes feature flags (fast mode, redeem toggle, etc.).
+- Autosave job in `server.js` runs every 30s—watch logs to ensure it stays alive.
+
+- Keep per-game config mirrored front/back (birds, trees, mines).
+- Promo history in UI only shows successes—don’t rely on it for debugging failed attempts; check Mongo.
+- Trucks can only be loaded at the farm. Buttons should reflect the truck’s current location/states to avoid confusing players.
+- Achievements modal expects `achievementHistory`, `activityStreak`, `currencyByGame`, and `conversionCapacity` in status payloads. Missing fields will crash UI panels.
+- Always call `syncAllCurrency` or `AchievementManager.getStatus` after mutating currency to keep derived totals accurate.
 
 By following these instructions, AI agents can contribute effectively to the `lapia-games` project. If any section is unclear or incomplete, please request clarification or additional details.

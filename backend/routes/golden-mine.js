@@ -17,6 +17,7 @@ const MINE_TYPES = {
 const PRODUCTION_TIME = process.env.FAST_MODE === 'true' ? 30 : 8 * 60 * 60; // 30s testing / 8h normal
 const REST_TIME = process.env.FAST_MODE === 'true' ? 15 : 4 * 60 * 60; // 15s testing / 4h normal
 const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 : 2 * 60 * 60; // 10s testing / 2h normal
+const PREMIUM_TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 3 : 5 * 60;
 const MAX_MINES = 10;
 const MAX_WORKERS_PER_MINE = 10;
 
@@ -26,6 +27,17 @@ function calculateWorkerCost(mineType, workerNumber) {
     const baseCost = MINE_TYPES[mineType].cost;
     const multiplier = (workerNumber - 1) * 0.1; // 10% per position
     return Math.floor(baseCost * multiplier);
+}
+
+function getTruckTravelTime(user) {
+    if (user?.goldenMineUpgrades?.helicopterTransport) {
+        return PREMIUM_TRUCK_TRAVEL_TIME;
+    }
+    return TRUCK_TRAVEL_TIME;
+}
+
+function hasAutoCollect(user) {
+    return Boolean(user?.goldenMineUpgrades?.autoCollect);
 }
 
 function advanceMineState(mine, now) {
@@ -86,6 +98,48 @@ function advanceMineState(mine, now) {
     return changed;
 }
 
+function collectMineOre(user, mineIndex, options = {}) {
+    const progress = user.goldenMineProgress;
+    if (!progress || !Array.isArray(progress.mines)) {
+        return { success: false, reason: 'NO_PROGRESS' };
+    }
+
+    if (mineIndex < 0 || mineIndex >= progress.mines.length) {
+        return { success: false, reason: 'MINE_NOT_FOUND' };
+    }
+
+    const mine = progress.mines[mineIndex];
+    if (!mine) {
+        return { success: false, reason: 'MINE_NOT_FOUND' };
+    }
+
+    if (mine.state !== 'ready') {
+        return { success: false, reason: 'NOT_READY' };
+    }
+
+    const oreType = mine.type;
+    const collectedAmount = parseInt(mine.oreProduced, 10) || 0;
+
+    if (!progress.inventory) {
+        progress.inventory = {};
+    }
+
+    const currentValue = parseInt(progress.inventory[oreType], 10) || 0;
+    progress.inventory[oreType] = currentValue + collectedAmount;
+    progress.totalOreMined = (progress.totalOreMined || 0) + collectedAmount;
+
+    mine.state = 'resting';
+    mine.timeLeft = REST_TIME;
+    mine.lastStateChange = options.now || new Date();
+    mine.oreProduced = 0;
+
+    user.markModified('goldenMineProgress.inventory');
+    user.markModified('goldenMineProgress.mines');
+    user.markModified('goldenMineProgress.totalOreMined');
+
+    return { success: true, oreType, amount: collectedAmount, mineIndex };
+}
+
 // Get Golden Mine status
 router.get('/status/:username', async (req, res) => {
     try {
@@ -126,9 +180,12 @@ router.get('/status/:username', async (req, res) => {
 
         // Update mine states based on time
         const now = new Date();
+        const travelTime = getTruckTravelTime(user);
+        const autoCollect = hasAutoCollect(user);
+        const autoCollected = {};
         let needsSave = false;
 
-        user.goldenMineProgress.mines.forEach((mine) => {
+        user.goldenMineProgress.mines.forEach((mine, index) => {
             if (!mine) return;
 
             if (mine.state === 'producing' && mine.timeLeft > PRODUCTION_TIME) {
@@ -144,17 +201,25 @@ router.get('/status/:username', async (req, res) => {
             if (advanceMineState(mine, now)) {
                 needsSave = true;
             }
+
+            if (autoCollect && mine.state === 'ready') {
+                const result = collectMineOre(user, index, { now, autoTrigger: true });
+                if (result.success && result.amount > 0) {
+                    autoCollected[result.oreType] = (autoCollected[result.oreType] || 0) + result.amount;
+                }
+                needsSave = needsSave || result.success;
+            }
         });
 
         // Update truck location
         if (user.goldenMineProgress.truckDepartureTime) {
             const travelTimePassed = Math.floor((now - user.goldenMineProgress.truckDepartureTime) / 1000);
 
-            if (user.goldenMineProgress.truckLocation === 'traveling_to_factory' && travelTimePassed >= TRUCK_TRAVEL_TIME) {
+            if (user.goldenMineProgress.truckLocation === 'traveling_to_factory' && travelTimePassed >= travelTime) {
                 user.goldenMineProgress.truckLocation = 'factory';
                 user.goldenMineProgress.truckDepartureTime = null;
                 needsSave = true;
-            } else if (user.goldenMineProgress.truckLocation === 'traveling_to_mine' && travelTimePassed >= TRUCK_TRAVEL_TIME) {
+            } else if (user.goldenMineProgress.truckLocation === 'traveling_to_mine' && travelTimePassed >= travelTime) {
                 user.goldenMineProgress.truckLocation = 'mine';
                 user.goldenMineProgress.truckDepartureTime = null;
                 needsSave = true;
@@ -165,7 +230,7 @@ router.get('/status/:username', async (req, res) => {
             await user.save();
         }
 
-        res.json({
+        const payload = {
             coins: user.goldenMineProgress.coins,
             mines: user.goldenMineProgress.mines,
             inventory: Object.fromEntries(
@@ -177,8 +242,19 @@ router.get('/status/:username', async (req, res) => {
             ),
             totalMinesOwned: user.goldenMineProgress.totalMinesOwned,
             totalOreMined: user.goldenMineProgress.totalOreMined,
-            totalCoinsEarned: user.goldenMineProgress.totalCoinsEarned
-        });
+            totalCoinsEarned: user.goldenMineProgress.totalCoinsEarned,
+            truckTravelTime: travelTime,
+            upgrades: {
+                helicopterTransport: Boolean(user?.goldenMineUpgrades?.helicopterTransport),
+                autoCollect
+            }
+        };
+
+        if (Object.keys(autoCollected).length > 0) {
+            payload.autoCollected = autoCollected;
+        }
+
+        res.json(payload);
 
     } catch (error) {
         console.error('Error getting Golden Mine status:', error);
@@ -351,27 +427,17 @@ router.post('/collect_ore', async (req, res) => {
             return res.status(400).json({ error: 'Mine not found' });
         }
 
-        if (mine.state !== 'ready') {
+        const result = collectMineOre(user, mineIndex, { now: new Date() });
+        if (!result.success) {
             return res.status(400).json({ error: 'Mine is not ready for collection' });
         }
-
-        const oreType = mine.type;
-        const collectedAmount = parseInt(mine.oreProduced, 10) || 0;
-
-        user.goldenMineProgress.inventory[oreType] = (parseInt(user.goldenMineProgress.inventory[oreType] || 0)) + collectedAmount;
-        user.goldenMineProgress.totalOreMined += collectedAmount;
-
-        // Reset mine to resting
-        mine.state = 'resting';
-        mine.timeLeft = REST_TIME;
-        mine.lastStateChange = new Date();
-        mine.oreProduced = 0;
 
         await user.save();
 
         res.json({
             success: true,
-            collected: collectedAmount,
+            collected: result.amount,
+            oreType: mine.type,
             newInventory: user.goldenMineProgress.inventory
         });
 
