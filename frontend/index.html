@@ -67,15 +67,18 @@
 <script src="./js/toast-manager.js"></script>
 <script src="./js/promo-manager.js"></script>
 <script type="module">
-    // ✅ Загружаем модули в правильном порядке
-    import { AuthManager } from './auth/auth-manager.js';
-    import { ShopUI } from './shop/shop-ui.js';
+  // ✅ Загружаем модули в правильном порядке
+  import { AuthManager } from './auth/auth-manager.js';
+  import { ShopUI } from './shop/shop-ui.js';
+  import { FriendCenter } from './js/friends/friend-center.js';
     
-    // Инициализируем системы
-    window.authManager = new AuthManager();
-    window.shopUI = new ShopUI();
+  // Инициализируем системы
+  window.authManager = new AuthManager();
+  window.shopUI = new ShopUI();
+  window.friendCenter = new FriendCenter({ authManager: window.authManager });
+  window.friendCenter.init();
     
-    console.log('✅ All systems initialized');
+  console.log('✅ All systems initialized');
 </script>
 <script src="./script.js"></script>
 </body>

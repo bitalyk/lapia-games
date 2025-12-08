@@ -48,6 +48,65 @@
             </div>
         </div>
 
+        <!-- Friend Invitation Center -->
+        <section class="friend-center" data-friend-center>
+            <div class="friend-card">
+                <div class="friend-card__header">
+                    <div>
+                        <p class="friend-card__kicker">Telegram Network</p>
+                        <h3>Invite Legit Friends</h3>
+                        <p>Generate deep links, track verified joins, and unlock LPA bonuses once invites stick.</p>
+                    </div>
+                    <button class="pill-btn" type="button" data-action="generate-invite">Generate Link</button>
+                </div>
+
+                <div class="friend-card__invite" data-friend-invite-panel hidden>
+                    <div class="friend-card__invite-link">
+                        <code class="friend-card__invite-text" data-friend-invite-link>https://t.me/your-bot?startapp=CODE</code>
+                        <button class="ghost-btn" type="button" data-action="copy-invite">Copy</button>
+                    </div>
+                    <div class="friend-card__share">
+                        <a class="share-btn telegram" href="#" target="_blank" rel="noreferrer" data-action="share-telegram">Share on Telegram</a>
+                        <button class="share-btn" type="button" data-action="share-generic">Share Link</button>
+                    </div>
+                    <p class="friend-card__hint" data-friend-invite-hint>Links expire after 7 days. Only verified players count.</p>
+                </div>
+
+                <div class="friend-card__stats" data-friend-stats>
+                    <div class="friend-stat">
+                        <p class="label">Successful Invites</p>
+                        <p class="value" data-friend-stat-success>0</p>
+                        <small data-friend-stat-lpa>+0 LPA earned</small>
+                    </div>
+                    <div class="friend-stat">
+                        <p class="label">Pending Links</p>
+                        <p class="value" data-friend-stat-pending>0</p>
+                        <small data-friend-stat-last>Last invite — never</small>
+                    </div>
+                    <div class="friend-stat">
+                        <p class="label">Active Friends</p>
+                        <p class="value" data-friend-stat-active>0</p>
+                        <small data-friend-stat-rate>0% conversion</small>
+                    </div>
+                    <div class="friend-stat">
+                        <p class="label">Fraud Alerts</p>
+                        <p class="value" data-friend-stat-alerts>0</p>
+                        <small>Stay below the radar</small>
+                    </div>
+                </div>
+
+                <div class="friend-card__friends">
+                    <div class="friend-list-header">
+                        <h4>Active Friends</h4>
+                        <button class="ghost-btn" type="button" data-action="refresh-friends">Refresh</button>
+                    </div>
+                    <ul class="friend-list" data-friend-list>
+                        <li class="friend-empty">No friends yet. Invite someone and play together!</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
         <!-- Promo Hub -->
         <section class="promo-center">
             <div class="promo-card">

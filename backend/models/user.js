@@ -230,7 +230,11 @@ const activityStreakSchema = new mongoose.Schema({
 
 const friendInviteSchema = new mongoose.Schema({
   invitedCount: { type: Number, default: 0 },
-  invitedUsers: { type: [String], default: [] }
+  invitedUsers: { type: [String], default: [] },
+  successfulInvites: { type: Number, default: 0 },
+  pendingInvites: { type: Number, default: 0 },
+  lastInviteSentAt: { type: Date, default: null },
+  lastRewardedAt: { type: Date, default: null }
 }, { _id: false });
 
 const achievementHistorySchema = new mongoose.Schema({
@@ -303,6 +307,24 @@ const userSchema = new mongoose.Schema({
     sparse: true,
     trim: true,
     lowercase: true
+  },
+  registrationType: {
+    type: String,
+    enum: ['organic', 'invited', 'manual', 'telegram_migration'],
+    default: 'organic'
+  },
+  registrationIp: {
+    type: String,
+    default: null
+  },
+  invitedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  invitationMetadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({})
   },
   
   // Игровые данные Happy Birds
@@ -479,6 +501,7 @@ userSchema.index({ 'platformStats.totalEarnings': -1 });
 userSchema.index({ 'lastActive': -1 }); // Для активных пользователей
 userSchema.index({ 'gamesProgress.lastPlayed': -1 }); // Для сортировки по играм
 userSchema.index({ 'telegramProfile.id': 1 }, { sparse: true });
+userSchema.index({ invitedBy: 1 });
 
 // Методы для платформы
 userSchema.methods.updatePlatformStats = function(updates) {

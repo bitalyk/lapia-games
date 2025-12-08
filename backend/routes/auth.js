@@ -19,6 +19,8 @@ import {
   logTokenRefreshed,
   logInvalidToken
 } from "../services/security-logger.js";
+import { processInvitation } from "../services/friend-invitation-manager.js";
+import RegistrationLog from "../models/registration-log.js";
 
 const router = express.Router();
 
@@ -119,17 +121,19 @@ async function findOrCreateTelegramUser(profile) {
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
   try {
+    const { username, password, email } = req.body || {};
+    const clientIp = extractClientIp(req);
+    const userAgent = req.get("user-agent") || null;
+
     if (!isManualMode) {
       await logManualAuthAttempt({
         username,
-        ipAddress: extractClientIp(req),
-        userAgent: req.get("user-agent") || null,
+        ipAddress: clientIp,
+        userAgent,
         metadata: { endpoint: "register" }
       });
       return res.status(403).json({ error: "Manual registration is disabled in Telegram auth mode." });
     }
-
-    const { username, password, email } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ error: "Username and password required" });
@@ -153,6 +157,9 @@ router.post("/register", async (req, res) => {
       username,
       passwordHash: hash,
       email: email || null,
+      registrationType: "manual",
+      registrationIp: clientIp,
+      invitationMetadata: { source: "manual" },
       // Initialize Cat Chess with starting coins
       catChessProgress: {
         coins: 1000,
@@ -167,6 +174,14 @@ router.post("/register", async (req, res) => {
     });
 
     await user.save();
+
+    await RegistrationLog.create({
+      userId: user._id,
+      telegramId: null,
+      inviteCode: null,
+      ipAddress: clientIp,
+      userAgent
+    });
 
     const achievementStatus = AchievementManager.getStatus(user);
     if (user.isModified()) {
@@ -239,17 +254,20 @@ router.post("/telegram", async (req, res) => {
       return res.status(403).json({ error: "Telegram login is disabled in manual auth mode." });
     }
 
-    const { initData } = req.body || {};
+    const { initData, inviteCode: inviteCodeParam } = req.body || {};
     if (!initData || typeof initData !== "string") {
       return res.status(400).json({ error: "initData is required" });
     }
+
+    const clientIp = extractClientIp(req);
+    const userAgent = req.get("user-agent") || null;
 
     const validation = validateTelegramInitData(initData);
     if (!validation.ok) {
       await logSecurityEvent("telegram_payload_invalid", {
         severity: "warn",
-        ipAddress: extractClientIp(req),
-        userAgent: req.get("user-agent") || null,
+        ipAddress: clientIp,
+        userAgent,
         metadata: { reason: validation.reason }
       });
       return res.status(401).json({
@@ -263,10 +281,27 @@ router.post("/telegram", async (req, res) => {
       return res.status(400).json({ error: "Telegram user information is missing" });
     }
 
+    let inviteCode = inviteCodeParam || null;
+    if (!inviteCode && validation.dataMap instanceof Map) {
+      inviteCode =
+        validation.dataMap.get("tgWebAppStartParam") ||
+        validation.dataMap.get("start_param") ||
+        validation.dataMap.get("startapp") ||
+        null;
+    }
+
     let user = await findOrCreateTelegramUser(profile);
     user.telegramProfile = profile;
     if (!user.telegramLinkedAt) {
       user.telegramLinkedAt = new Date();
+    }
+    const isNewUser = user.isNew;
+    if (isNewUser) {
+      user.registrationType = inviteCode ? "invited" : "organic";
+      user.registrationIp = clientIp;
+      if (inviteCode) {
+        user.invitationMetadata = { inviteCodeAttempted: inviteCode };
+      }
     }
 
     const now = new Date();
@@ -277,9 +312,29 @@ router.post("/telegram", async (req, res) => {
     const achievementStatus = AchievementManager.getStatus(user);
     await user.save();
 
+    if (inviteCode && isNewUser) {
+      try {
+        await processInvitation(inviteCode, user._id);
+      } catch (error) {
+        console.error("Invitation validation error:", error);
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({ error: error.message || "Invitation validation failed" });
+      }
+    }
+
+    if (isNewUser) {
+      await RegistrationLog.create({
+        userId: user._id,
+        telegramId: profile.id,
+        inviteCode: inviteCode || null,
+        ipAddress: clientIp,
+        userAgent
+      });
+    }
+
     const sessionResult = await issueSessionToken(user, {
-      ipAddress: extractClientIp(req),
-      userAgent: req.get("user-agent") || null,
+      ipAddress: clientIp,
+      userAgent,
       metadata: {
         telegramId: profile.id,
         telegramUsername: profile.username || null,
@@ -291,8 +346,8 @@ router.post("/telegram", async (req, res) => {
       username: user.username,
       telegramId: profile.id,
       sessionTokenId: sessionResult.session.tokenId,
-      ipAddress: extractClientIp(req),
-      userAgent: req.get("user-agent") || null
+      ipAddress: clientIp,
+      userAgent
     });
 
     return res.json({

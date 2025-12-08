@@ -57,6 +57,8 @@ export class AuthManager {
         this.tokenRefreshInFlight = false;
         this.telegramOverlayState = 'idle';
         this.telegramRetryHandlerBound = false;
+        this.telegramAccountStorageKey = 'platform_telegram_user_id';
+        this.telegramAppUserId = null;
         this.init();
     }
 
@@ -65,6 +67,7 @@ export class AuthManager {
             await this.loadAuthConfig();
             this.installFetchInterceptor();
             this.restoreSessionToken();
+            this.resetSessionIfTelegramAccountChanged();
             await this.checkExistingSession();
 
             if (!this.isLoggedIn && this.authConfig.mode === 'telegram') {
@@ -1438,6 +1441,118 @@ export class AuthManager {
         }
     }
 
+    getStoredTelegramAccountId() {
+        try {
+            return localStorage.getItem(this.telegramAccountStorageKey) || null;
+        } catch (error) {
+            console.warn('Unable to read cached Telegram account id:', error);
+            return null;
+        }
+    }
+
+    persistTelegramAccountId(telegramId) {
+        try {
+            if (telegramId) {
+                localStorage.setItem(this.telegramAccountStorageKey, String(telegramId));
+            } else {
+                localStorage.removeItem(this.telegramAccountStorageKey);
+            }
+        } catch (error) {
+            console.warn('Unable to persist Telegram account id:', error);
+        }
+    }
+
+    getTelegramWebAppUserId() {
+        try {
+            if (typeof window === 'undefined') {
+                return null;
+            }
+
+            const telegram = window.Telegram?.WebApp;
+            if (!telegram) {
+                return null;
+            }
+
+            const unsafeId = telegram.initDataUnsafe?.user?.id;
+            if (unsafeId) {
+                return String(unsafeId);
+            }
+
+            const initData = telegram.initData || '';
+            if (!initData) {
+                return null;
+            }
+
+            const params = new URLSearchParams(initData);
+            const rawUser = params.get('user');
+            if (!rawUser) {
+                return null;
+            }
+
+            const parsed = JSON.parse(rawUser);
+            return parsed?.id ? String(parsed.id) : null;
+        } catch (error) {
+            console.warn('Unable to resolve Telegram WebApp user id:', error);
+            return null;
+        }
+    }
+
+    resetSessionState() {
+        this.clearSessionToken();
+        this.clearTokenRefreshTimer();
+        this.currentUser = null;
+        this.isLoggedIn = false;
+        this.achievementStatus = null;
+
+        try {
+            localStorage.removeItem('platform_user');
+            localStorage.removeItem('lapia_games_user');
+        } catch (error) {
+            console.warn('Failed to clear cached session payloads:', error);
+        }
+
+        this.persistTelegramAccountId(null);
+
+        try {
+            Object.keys(localStorage).forEach((key) => {
+                if (key.startsWith('platform_profile_') || key.startsWith('currency_balances_')) {
+                    localStorage.removeItem(key);
+                }
+            });
+        } catch (error) {
+            console.warn('Failed to clear cached platform data:', error);
+        }
+    }
+
+    resetSessionIfTelegramAccountChanged() {
+        if (this.authConfig.mode !== 'telegram') {
+            return;
+        }
+
+        const activeTelegramId = this.getTelegramWebAppUserId();
+        const storedTelegramId = this.getStoredTelegramAccountId();
+        let cachedProfile = null;
+
+        try {
+            cachedProfile = localStorage.getItem('platform_user');
+        } catch (error) {
+            cachedProfile = null;
+        }
+
+        const hasCachedSession = Boolean(this.sessionToken || this.cachedSessionUsername || cachedProfile);
+
+        if (activeTelegramId && hasCachedSession) {
+            if (!storedTelegramId || storedTelegramId !== activeTelegramId) {
+                console.warn('Telegram account switch detected. Clearing cached session.');
+                this.resetSessionState();
+            }
+        }
+
+        if (activeTelegramId) {
+            this.telegramAppUserId = activeTelegramId;
+        }
+    }
+
     getRefreshWindowMs() {
         const sessionTimeoutSeconds = Number(this.authConfig?.sessionTimeout) || 86400;
         const sessionTimeoutMs = sessionTimeoutSeconds * 1000;
@@ -1616,6 +1731,10 @@ export class AuthManager {
 
             this.isLoggedIn = true;
             this.setSessionToken(data.token, data.expiresAt, profile.username);
+            const resolvedTelegramId = this.getTelegramWebAppUserId()
+                || (profile?.telegramProfile?.id ? String(profile.telegramProfile.id) : null)
+                || (data.user?.telegramProfile?.id ? String(data.user.telegramProfile.id) : null);
+            this.persistTelegramAccountId(resolvedTelegramId);
             this.saveSession(profile);
             await this.initializeUserCurrencies(profile.username);
             this.onLoginSuccess(profile);
@@ -1895,24 +2014,7 @@ export class AuthManager {
         // Сохраняем прогресс перед выходом
         this.saveProgress();
         this.closeAchievements();
-
-        this.clearSessionToken();
-        this.clearTokenRefreshTimer();
-        
-        this.currentUser = null;
-        this.isLoggedIn = false;
-        this.achievementStatus = null;
-        
-        // Очищаем хранилище
-        localStorage.removeItem('platform_user');
-        localStorage.removeItem('lapia_games_user');
-        
-        // Очищаем сессии для всех пользователей
-        Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('platform_profile_') || key.startsWith('currency_balances_')) {
-                localStorage.removeItem(key);
-            }
-        });
+        this.resetSessionState();
         
         this.onLogout();
         
@@ -1954,8 +2056,15 @@ export class AuthManager {
         // ✅ Перепривязываем события с правильным контекстом
         this.bindMenuEvents();
         this.setupPromoCenter();
+        this.setupFriendCenter();
         
         console.log('🎮 Game menu initialized');
+    }
+
+    setupFriendCenter() {
+        if (window.friendCenter && typeof window.friendCenter.attachToMenu === 'function') {
+            window.friendCenter.attachToMenu();
+        }
     }
 
     setupPromoCenter() {

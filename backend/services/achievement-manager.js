@@ -104,13 +104,29 @@ class AchievementManager {
     if (!user.friendInvites) {
       user.friendInvites = {
         invitedCount: 0,
-        invitedUsers: []
+        invitedUsers: [],
+        successfulInvites: 0,
+        pendingInvites: 0,
+        lastInviteSentAt: null,
+        lastRewardedAt: null
       };
     }
     if (!Array.isArray(user.friendInvites.invitedUsers)) {
       user.friendInvites.invitedUsers = [];
     }
     user.friendInvites.invitedCount = clampNumber(user.friendInvites.invitedCount || user.friendInvites.invitedUsers.length);
+    if (typeof user.friendInvites.successfulInvites !== 'number') {
+      user.friendInvites.successfulInvites = clampNumber(user.friendInvites.successfulInvites);
+    }
+    if (typeof user.friendInvites.pendingInvites !== 'number') {
+      user.friendInvites.pendingInvites = clampNumber(user.friendInvites.pendingInvites);
+    }
+    if (!user.friendInvites.lastInviteSentAt) {
+      user.friendInvites.lastInviteSentAt = null;
+    }
+    if (!user.friendInvites.lastRewardedAt) {
+      user.friendInvites.lastRewardedAt = null;
+    }
 
     return user;
   }
@@ -339,6 +355,9 @@ class AchievementManager {
     }
 
     invites.invitedCount = invites.invitedUsers.length;
+    invites.successfulInvites = clampNumber(invites.successfulInvites) + 1;
+    invites.pendingInvites = Math.max(0, clampNumber(invites.pendingInvites) - 1);
+    invites.lastRewardedAt = new Date();
 
     const requirement = SOCIAL_REQUIREMENTS.friendInviter;
     const unlocked = [];
@@ -445,7 +464,11 @@ class AchievementManager {
       activityStreak: { ...user.activityStreak },
       friendInvites: {
         invitedCount: user.friendInvites?.invitedCount || 0,
-        invitedUsers: [...(user.friendInvites?.invitedUsers || [])]
+        invitedUsers: [...(user.friendInvites?.invitedUsers || [])],
+        successfulInvites: user.friendInvites?.successfulInvites || 0,
+        pendingInvites: user.friendInvites?.pendingInvites || 0,
+        lastInviteSentAt: user.friendInvites?.lastInviteSentAt || null,
+        lastRewardedAt: user.friendInvites?.lastRewardedAt || null
       },
       achievementHistory: [...(user.achievementHistory || [])].slice(-50),
       conversionCapacity: syncResult.conversionCapacity,
