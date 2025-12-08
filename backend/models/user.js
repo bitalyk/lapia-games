@@ -195,6 +195,17 @@ const fishesUpgradeSchema = new mongoose.Schema({
   noAquariumLimit: { type: Boolean, default: false }
 }, { _id: false });
 
+const telegramProfileSchema = new mongoose.Schema({
+  id: { type: String },
+  username: { type: String },
+  firstName: { type: String },
+  lastName: { type: String },
+  photoUrl: { type: String },
+  languageCode: { type: String },
+  addedToAttachmentMenu: { type: Boolean, default: false },
+  allowsWriteToPm: { type: Boolean, default: false }
+}, { _id: false });
+
 const lpaTransactionSchema = new mongoose.Schema({
   itemId: { type: String, required: true },
   game: { type: String, required: true },
@@ -274,7 +285,18 @@ const userSchema = new mongoose.Schema({
   },
   passwordHash: { 
     type: String, 
-    required: true 
+    required: function passwordRequired() {
+      return !(this.telegramProfile && this.telegramProfile.id);
+    },
+    default: null
+  },
+  telegramProfile: {
+    type: telegramProfileSchema,
+    default: null
+  },
+  telegramLinkedAt: {
+    type: Date,
+    default: null
   },
   email: { 
     type: String, 
@@ -456,6 +478,7 @@ userSchema.index({ 'platformStats.lastLogin': -1 });
 userSchema.index({ 'platformStats.totalEarnings': -1 });
 userSchema.index({ 'lastActive': -1 }); // Для активных пользователей
 userSchema.index({ 'gamesProgress.lastPlayed': -1 }); // Для сортировки по играм
+userSchema.index({ 'telegramProfile.id': 1 }, { sparse: true });
 
 // Методы для платформы
 userSchema.methods.updatePlatformStats = function(updates) {
@@ -510,6 +533,11 @@ userSchema.methods.ensureAchievementState = function ensureAchievementState() {
 // Статический метод для поиска по username
 userSchema.statics.findByUsername = function(username) {
   return this.findOne({ username: new RegExp(`^${username}$`, 'i') });
+};
+
+userSchema.statics.findByTelegramId = function(telegramId) {
+  if (!telegramId) return Promise.resolve(null);
+  return this.findOne({ 'telegramProfile.id': telegramId });
 };
 
 // Удаляем дублирующиеся индексы перед созданием модели

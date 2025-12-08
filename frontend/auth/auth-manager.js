@@ -35,14 +35,41 @@ export class AuthManager {
         this.achievementAutoRefreshTimer = null;
         this.achievementModalRefreshTimer = null;
         this.liveAchievementUpdateInFlight = false;
-        this.API_BASE = "http://localhost:3000/api";
+        const origin = (typeof window !== 'undefined' && window.location?.origin)
+            ? window.location.origin.replace(/\/$/, '')
+            : 'http://localhost:3000';
+        this.API_BASE = `${origin}/api`;
         this.promoWidget = null;
+        this.authConfig = {
+            mode: 'manual',
+            sessionTimeout: 86400,
+            tokenRefreshEnabled: true,
+            allowMultipleSessions: false
+        };
+        this.sessionToken = null;
+        this.sessionExpiresAt = null;
+        this.sessionTokenStorageKey = 'platform_session_token';
+        this.fetchInterceptorInstalled = false;
+        this.cachedSessionUsername = null;
+        this.telegramLoginInFlight = false;
+        this.deferAuthModeUi = false;
+        this.tokenRefreshTimer = null;
+        this.tokenRefreshInFlight = false;
+        this.telegramOverlayState = 'idle';
+        this.telegramRetryHandlerBound = false;
         this.init();
     }
 
     async init() {
         try {
+            await this.loadAuthConfig();
+            this.installFetchInterceptor();
+            this.restoreSessionToken();
             await this.checkExistingSession();
+
+            if (!this.isLoggedIn && this.authConfig.mode === 'telegram') {
+                await this.tryTelegramAutoLogin();
+            }
         } catch (error) {
             console.error('Failed to initialize auth manager:', error);
         } finally {
@@ -61,6 +88,10 @@ export class AuthManager {
     // ✅ ДОБАВЛЯЕМ: Метод успешного логина
     onLoginSuccess(userData) {
         console.log('✅ Login successful for:', userData.username);
+
+        if (this.authConfig.mode === 'telegram') {
+            this.setTelegramOverlayState('success');
+        }
         
         // Обновляем UI
         this.updateAuthUI();
@@ -91,6 +122,9 @@ export class AuthManager {
     // ✅ ДОБАВЛЯЕМ: Метод выхода
     onLogout() {
         console.log('✅ Logout completed');
+        if (this.authConfig.mode === 'telegram') {
+            this.setTelegramOverlayState('waiting');
+        }
         this.updateAuthUI();
         this.revealUI();
         this.stopAchievementAutoRefresh();
@@ -116,6 +150,8 @@ export class AuthManager {
             if (gameMenu) gameMenu.style.display = 'none';
             if (gameArea) gameArea.style.display = 'none';
         }
+
+        this.syncTelegramBodyClasses();
     }
 
     revealUI() {
@@ -1027,6 +1063,7 @@ export class AuthManager {
             username: userProfile.username,
             lastLogin: new Date().toISOString()
         }));
+        this.cachedSessionUsername = userProfile.username;
     }
 
     // ✅ ДОБАВЛЯЕМ: Сохранение прогресса
@@ -1069,12 +1106,554 @@ export class AuthManager {
         window.refreshAchievements = (options) => this.refreshAchievementStatus(options || {});
     }
 
+    attachTelegramRetryHandler() {
+        if (this.telegramRetryHandlerBound) {
+            return;
+        }
+        const retryBtn = document.getElementById('telegram-retry-btn');
+        if (!retryBtn) {
+            return;
+        }
+        retryBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            this.setTelegramOverlayState('connecting', { disableRetry: true });
+            this.tryTelegramAutoLogin({ reason: 'manual-retry' });
+        });
+        this.telegramRetryHandlerBound = true;
+    }
+
+    syncTelegramBodyClasses() {
+        if (typeof document === 'undefined') {
+            return;
+        }
+        const body = document.body;
+        if (!body) {
+            return;
+        }
+        const telegramActive = this.authConfig.mode === 'telegram';
+        body.classList.toggle('telegram-auth-mode', telegramActive);
+        const waiting = telegramActive && !this.isLoggedIn;
+        body.classList.toggle('telegram-auth-wait', waiting);
+    }
+
+    toggleTelegramViews(manualEnabled) {
+        const loginContainer = document.getElementById('login-container');
+        const overlay = document.getElementById('telegram-auth-overlay');
+
+        if (!loginContainer || !overlay) {
+            return;
+        }
+
+        if (manualEnabled) {
+            overlay.hidden = true;
+            overlay.setAttribute('aria-hidden', 'true');
+            loginContainer.hidden = false;
+        } else {
+            this.attachTelegramRetryHandler();
+            loginContainer.hidden = true;
+            overlay.hidden = false;
+            overlay.setAttribute('aria-hidden', 'false');
+            if (this.telegramOverlayState === 'idle') {
+                this.setTelegramOverlayState('waiting');
+            } else {
+                this.setTelegramOverlayState(this.telegramOverlayState);
+            }
+        }
+    }
+
+    setTelegramOverlayState(state, options = {}) {
+        this.telegramOverlayState = state;
+        const overlay = document.getElementById('telegram-auth-overlay');
+        const titleEl = document.getElementById('telegram-status-title');
+        const messageEl = document.getElementById('telegram-status-message');
+        const retryBtn = document.getElementById('telegram-retry-btn');
+
+        if (!overlay || !titleEl || !messageEl || !retryBtn) {
+            return;
+        }
+
+        const presets = {
+            waiting: {
+                title: 'Waiting for Telegram…',
+                message: 'Open the bot inside Telegram to continue.',
+                showRetry: false
+            },
+            connecting: {
+                title: 'Connecting to Telegram…',
+                message: 'Please wait while we verify your session.',
+                showRetry: false
+            },
+            error: {
+                title: 'Unable to authenticate',
+                message: 'Tap Retry or reopen the bot from Telegram.',
+                showRetry: true
+            },
+            success: {
+                title: 'Authenticated',
+                message: 'Loading your account…',
+                showRetry: false
+            }
+        };
+
+        const preset = presets[state] || {};
+        const title = options.title ?? preset.title ?? 'Telegram Login';
+        const message = options.message ?? preset.message ?? '';
+        const showRetry = options.showRetry ?? preset.showRetry ?? false;
+        const disableRetry = options.disableRetry ?? false;
+
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        retryBtn.style.display = showRetry ? 'block' : 'none';
+        retryBtn.disabled = disableRetry;
+
+        overlay.hidden = false;
+        overlay.setAttribute('aria-hidden', 'false');
+    }
+
+    async loadAuthConfig() {
+        try {
+            const response = await fetch('/api/config');
+            if (response?.ok) {
+                const data = await response.json();
+                if (data?.auth) {
+                    this.authConfig = {
+                        ...this.authConfig,
+                        ...data.auth
+                    };
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load auth config:', error);
+        } finally {
+            this.applyAuthModeUI();
+        }
+    }
+
+    installFetchInterceptor() {
+        if (this.fetchInterceptorInstalled || typeof window === 'undefined' || typeof window.fetch !== 'function') {
+            return;
+        }
+
+        const manager = this;
+        const nativeFetch = window.fetch.bind(window);
+
+        window.fetch = function interceptedFetch(input, init) {
+            if (manager.shouldAttachAuthHeader(input)) {
+                if (input instanceof Request) {
+                    const headers = manager.cloneHeaders(input.headers);
+                    if (!headers.has('Authorization')) {
+                        headers.set('Authorization', `Bearer ${manager.sessionToken}`);
+                    }
+                    const patchedRequest = new Request(input, { headers });
+                    return nativeFetch(patchedRequest);
+                }
+
+                const finalInit = { ...(init || {}) };
+                const headers = manager.cloneHeaders(finalInit.headers);
+                if (!headers.has('Authorization')) {
+                    headers.set('Authorization', `Bearer ${manager.sessionToken}`);
+                }
+                finalInit.headers = headers;
+                return nativeFetch(input, finalInit);
+            }
+
+            return nativeFetch(input, init);
+        };
+
+        this.fetchInterceptorInstalled = true;
+    }
+
+    applyAuthModeUI() {
+        if (typeof document === 'undefined') {
+            return;
+        }
+
+        if (document.readyState === 'loading') {
+            if (this.deferAuthModeUi) {
+                return;
+            }
+            this.deferAuthModeUi = true;
+            document.addEventListener('DOMContentLoaded', () => {
+                this.deferAuthModeUi = false;
+                this.applyAuthModeUI();
+            }, { once: true });
+            return;
+        }
+
+        const manualEnabled = this.authConfig.mode !== 'telegram';
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const registerBtn = document.getElementById('registerBtn');
+        const loginBtn = document.getElementById('loginBtn');
+        const authMsg = document.getElementById('authMsg');
+
+        this.syncTelegramBodyClasses();
+        this.toggleTelegramViews(manualEnabled);
+
+        [usernameInput, passwordInput].forEach((input) => {
+            if (input) {
+                input.disabled = !manualEnabled;
+            }
+        });
+
+        [registerBtn, loginBtn].forEach((btn) => {
+            if (btn) {
+                btn.disabled = !manualEnabled;
+                btn.dataset.authMode = manualEnabled ? 'manual' : 'telegram-disabled';
+            }
+        });
+
+        if (!manualEnabled && authMsg) {
+            authMsg.textContent = 'Use the Telegram WebApp to log in. Manual credentials are disabled.';
+            authMsg.dataset.status = 'telegram-only';
+        } else if (manualEnabled && authMsg && authMsg.dataset.status === 'telegram-only') {
+            authMsg.textContent = '';
+            delete authMsg.dataset.status;
+        }
+    }
+
+    shouldAttachAuthHeader(request) {
+        if (!this.sessionToken) {
+            return false;
+        }
+
+        let url = null;
+        if (request instanceof Request) {
+            url = request.url;
+        } else if (typeof request === 'string') {
+            url = request;
+        }
+
+        if (!url) {
+            return false;
+        }
+
+        if (url.startsWith(this.API_BASE)) {
+            return true;
+        }
+
+        const normalized = this.buildAbsoluteUrl(url);
+        return normalized.startsWith(this.API_BASE);
+    }
+
+    buildAbsoluteUrl(url) {
+        if (!url || typeof url !== 'string') {
+            return '';
+        }
+
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return url;
+        }
+
+        if (url.startsWith('/')) {
+            return `${window.location.origin}${url}`;
+        }
+
+        return `${window.location.origin}/${url.replace(/^\.\/?/, '')}`;
+    }
+
+    cloneHeaders(source) {
+        if (source instanceof Headers) {
+            return new Headers(source);
+        }
+
+        if (Array.isArray(source)) {
+            return new Headers(source);
+        }
+
+        return new Headers(source || {});
+    }
+
+    restoreSessionToken() {
+        try {
+            const raw = localStorage.getItem(this.sessionTokenStorageKey);
+            if (!raw) {
+                return;
+            }
+
+            const data = JSON.parse(raw);
+            if (!data?.token) {
+                this.clearSessionToken();
+                return;
+            }
+
+            if (data.expiresAt && new Date(data.expiresAt) <= new Date()) {
+                this.clearSessionToken();
+                return;
+            }
+
+            this.sessionToken = data.token;
+            this.sessionExpiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+            this.cachedSessionUsername = data.username || null;
+            this.scheduleTokenRefresh();
+        } catch (error) {
+            console.warn('Failed to restore session token:', error);
+            this.clearSessionToken();
+        }
+    }
+
+    persistSessionToken(token, expiresAt, username) {
+        if (!token) {
+            localStorage.removeItem(this.sessionTokenStorageKey);
+            this.sessionToken = null;
+            this.sessionExpiresAt = null;
+            return;
+        }
+
+        const normalizedExpiresAt = expiresAt ? new Date(expiresAt).toISOString() : null;
+        const payload = {
+            token,
+            expiresAt: normalizedExpiresAt,
+            username: username || this.currentUser?.username || this.cachedSessionUsername || null
+        };
+
+        localStorage.setItem(this.sessionTokenStorageKey, JSON.stringify(payload));
+        this.sessionToken = token;
+        this.sessionExpiresAt = normalizedExpiresAt ? new Date(normalizedExpiresAt) : null;
+        this.cachedSessionUsername = payload.username;
+    }
+
+    setSessionToken(token, expiresAt, username) {
+        if (!token) {
+            this.clearSessionToken();
+            return;
+        }
+
+        this.persistSessionToken(token, expiresAt, username);
+        this.scheduleTokenRefresh();
+    }
+
+    clearSessionToken() {
+        localStorage.removeItem(this.sessionTokenStorageKey);
+        this.sessionToken = null;
+        this.sessionExpiresAt = null;
+        this.cachedSessionUsername = null;
+        this.clearTokenRefreshTimer();
+    }
+
+    clearTokenRefreshTimer() {
+        if (this.tokenRefreshTimer) {
+            clearTimeout(this.tokenRefreshTimer);
+            this.tokenRefreshTimer = null;
+        }
+    }
+
+    getRefreshWindowMs() {
+        const sessionTimeoutSeconds = Number(this.authConfig?.sessionTimeout) || 86400;
+        const sessionTimeoutMs = sessionTimeoutSeconds * 1000;
+        if (sessionTimeoutMs <= 300000) {
+            return Math.max(60000, Math.floor(sessionTimeoutMs / 2));
+        }
+        return 300000;
+    }
+
+    scheduleTokenRefresh() {
+        this.clearTokenRefreshTimer();
+
+        if (
+            !this.sessionToken ||
+            !this.sessionExpiresAt ||
+            this.authConfig.mode !== 'telegram' ||
+            !this.authConfig.tokenRefreshEnabled
+        ) {
+            return;
+        }
+
+        const refreshWindowMs = this.getRefreshWindowMs();
+        const expiresAtMs = new Date(this.sessionExpiresAt).getTime();
+        const now = Date.now();
+        const triggerAt = expiresAtMs - refreshWindowMs + 5000; // small buffer
+        const delay = Math.max(0, triggerAt - now);
+
+        if (delay === 0) {
+            this.refreshTokenIfNeeded().catch((error) => {
+                console.warn('Token refresh attempt failed:', error);
+            });
+            return;
+        }
+
+        this.tokenRefreshTimer = setTimeout(() => {
+            this.refreshTokenIfNeeded().catch((error) => {
+                console.warn('Token refresh attempt failed:', error);
+            });
+        }, delay);
+    }
+
+    async refreshTokenIfNeeded(force = false) {
+        if (
+            !this.sessionToken ||
+            !this.sessionExpiresAt ||
+            this.authConfig.mode !== 'telegram' ||
+            !this.authConfig.tokenRefreshEnabled
+        ) {
+            return false;
+        }
+
+        const remainingMs = new Date(this.sessionExpiresAt).getTime() - Date.now();
+        const refreshWindowMs = this.getRefreshWindowMs();
+
+        if (!force && remainingMs > refreshWindowMs) {
+            this.scheduleTokenRefresh();
+            return false;
+        }
+
+        if (this.tokenRefreshInFlight) {
+            return false;
+        }
+
+        this.tokenRefreshInFlight = true;
+
+        try {
+            const refreshUrl = `${this.API_BASE.replace(/\/$/, '')}/auth/refresh`;
+            const response = await fetch(refreshUrl, { method: 'POST' });
+
+            if (response.status === 400) {
+                // Not yet eligible; try again closer to expiry
+                this.scheduleTokenRefresh();
+                return false;
+            }
+
+            if (response.status === 401) {
+                this.clearSessionToken();
+                console.warn('Refresh rejected due to invalid token.');
+                if (this.authConfig.mode === 'telegram') {
+                    this.tryTelegramAutoLogin().catch((error) => {
+                        console.warn('Auto-login after refresh failure failed:', error);
+                    });
+                }
+                return false;
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data?.success || !data.token) {
+                throw new Error(data?.error || 'Refresh failed');
+            }
+
+            this.setSessionToken(data.token, data.expiresAt, this.currentUser?.username || this.cachedSessionUsername);
+            return true;
+        } catch (error) {
+            console.error('Token refresh error:', error);
+            this.scheduleTokenRefresh();
+            return false;
+        } finally {
+            this.tokenRefreshInFlight = false;
+        }
+    }
+
+    async tryTelegramAutoLogin(options = {}) {
+        if (this.telegramLoginInFlight || this.isLoggedIn || this.authConfig.mode !== 'telegram') {
+            return false;
+        }
+
+        const setOverlayState = (state, extra = {}) => {
+            if (this.authConfig.mode === 'telegram') {
+                this.setTelegramOverlayState(state, extra);
+            }
+        };
+
+        const telegram = window?.Telegram?.WebApp;
+        if (!telegram) {
+            console.warn('Telegram WebApp SDK not detected.');
+            setOverlayState('error', {
+                message: 'This login works only inside Telegram. Open the bot from Telegram to continue.'
+            });
+            return false;
+        }
+
+        const initData = telegram.initData || '';
+        if (!initData) {
+            console.warn('Telegram initData payload missing.');
+            setOverlayState('error', {
+                message: 'Waiting for Telegram session data. Please reopen the bot from Telegram.'
+            });
+            return false;
+        }
+
+        this.telegramLoginInFlight = true;
+        setOverlayState('connecting', { disableRetry: true });
+
+        try {
+            telegram.ready?.();
+
+            const response = await fetch(`${this.API_BASE}/users/telegram`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ initData })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data?.success) {
+                throw new Error(data?.error || 'Telegram login failed');
+            }
+
+            const username = data.user?.username;
+            let profile = null;
+            if (username) {
+                profile = await this.resolveCurrentUserProfile(username);
+            }
+
+            if (!profile && data.user) {
+                profile = data.user;
+            }
+
+            if (!profile) {
+                throw new Error('Unable to resolve Telegram profile');
+            }
+
+            setOverlayState('success');
+            this.currentUser = profile;
+            if (data.user) {
+                this.mergeServerUserData(data.user);
+            }
+
+            this.isLoggedIn = true;
+            this.setSessionToken(data.token, data.expiresAt, profile.username);
+            this.saveSession(profile);
+            await this.initializeUserCurrencies(profile.username);
+            this.onLoginSuccess(profile);
+
+            return true;
+        } catch (error) {
+            console.error('Telegram login error:', error);
+            setOverlayState('error', {
+                message: options.reason === 'manual-retry'
+                    ? 'Still unable to verify your Telegram session. Please reopen the bot and try again.'
+                    : 'Telegram login failed. Tap Retry or reopen the bot inside Telegram.'
+            });
+            window.toastManager?.show('Telegram login failed. Please reopen via Telegram.', 'error');
+            return false;
+        } finally {
+            this.telegramLoginInFlight = false;
+        }
+    }
+
     // ✅ ОБНОВЛЕННЫЙ: Проверка существующей сессии
     async checkExistingSession() {
-        const savedUser = localStorage.getItem('platform_user');
-        if (savedUser) {
+        const savedUserRaw = localStorage.getItem('platform_user');
+        let userData = null;
+
+        if (savedUserRaw) {
             try {
-                const userData = JSON.parse(savedUser);
+                userData = JSON.parse(savedUserRaw);
+            } catch (error) {
+                console.warn('Unable to parse stored platform user:', error);
+            }
+        }
+
+        if (!userData && this.cachedSessionUsername) {
+            userData = { username: this.cachedSessionUsername };
+        }
+
+        if (userData) {
+            try {
                 const isValid = await this.validateSession(userData);
                 
                 if (isValid) {
@@ -1154,6 +1733,10 @@ export class AuthManager {
 
     // ✅ ОБНОВЛЕННЫЙ: Регистрация пользователя
     async register(username, password) {
+        if (this.authConfig.mode === 'telegram') {
+            return { success: false, error: 'Manual registration is disabled when Telegram auth is active.' };
+        }
+
         try {
             const response = await fetch(`${this.API_BASE}/users/register`, {
                 method: "POST",
@@ -1204,6 +1787,10 @@ export class AuthManager {
 
     // ✅ ОБНОВЛЕННЫЙ: Логин пользователя
     async login(username, password) {
+        if (this.authConfig.mode === 'telegram') {
+            return { success: false, error: 'Manual login is disabled when Telegram auth is active.' };
+        }
+
         try {
             const response = await fetch(`${this.API_BASE}/users/login`, {
                 method: "POST",
@@ -1230,6 +1817,8 @@ export class AuthManager {
                 this.currentUser = userProfile;
                 this.mergeServerUserData(data.user);
                 this.isLoggedIn = true;
+
+                this.setSessionToken(data.token, data.expiresAt, userProfile.username);
 
                 // Сохраняем сессию
                 this.saveSession(this.currentUser);
@@ -1306,6 +1895,9 @@ export class AuthManager {
         // Сохраняем прогресс перед выходом
         this.saveProgress();
         this.closeAchievements();
+
+        this.clearSessionToken();
+        this.clearTokenRefreshTimer();
         
         this.currentUser = null;
         this.isLoggedIn = false;

@@ -40,6 +40,13 @@
           </div>
           <div id="authMsg" class="auth-message"></div>
         </div>
+
+        <div id="telegram-auth-overlay" class="telegram-auth-overlay" hidden>
+          <div class="telegram-badge">Telegram Mode</div>
+          <h2 id="telegram-status-title">Connecting to Telegram…</h2>
+          <p id="telegram-status-message">Please wait while we verify your session.</p>
+          <button id="telegram-retry-btn" class="auth-btn primary" style="display:none;">Retry Connection</button>
+        </div>
       </div>
       
     </div>
@@ -53,6 +60,8 @@
   <!-- Игровая область -->
   <div id="game-area" style="display:none;"></div>
 
+  <!-- Telegram WebApp SDK must load before our auth manager -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
   <!-- В конце body в frontend/index.html -->
 <script src="./js/game-manager.js"></script>
 <script src="./js/toast-manager.js"></script>

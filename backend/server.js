@@ -18,6 +18,12 @@ import catChessRoutes from "./routes/cat-chess.js";
 import fishesRoutes from "./routes/fishes.js";
 import achievementsRoutes from "./routes/achievements.js";
 import promoCodeRoutes from "./routes/promo-codes.js";
+import authConfig, { getPublicAuthConfig } from "./config/auth-config.js";
+import requireAuth from "./middleware/require-auth.js";
+
+if (process.env.NODE_ENV === 'production' && authConfig.mode === 'manual') {
+  console.warn('WARNING: Manual auth mode enabled in production! Telegram auth is strongly recommended.');
+}
 
 // Mine configuration for progress saving
 const MINE_TYPES = {
@@ -168,37 +174,38 @@ app.get("/", (req, res) => {
 });
 
 // Подключаем роуты платформы
-app.use("/api/platform", platformRoutes);
+app.use("/api/platform", requireAuth, platformRoutes);
 
 // Подключаем систему достижений
-app.use("/api/achievements", achievementsRoutes);
+app.use("/api/achievements", requireAuth, achievementsRoutes);
 
 // Подключаем роуты игры
-app.use("/api/game", happyBirdsRoutes);
+app.use("/api/game", requireAuth, happyBirdsRoutes);
 
 // Подключаем роуты аутентификации
 app.use("/api/users", authRoutes);
+app.use("/api/auth", authRoutes);
 
 // Подключаем роуты пользователей
-app.use("/api/users", usersRoutes);
+app.use("/api/users", requireAuth, usersRoutes);
 
 // Подключаем роуты Rich Garden
-app.use("/api/rich-garden", richGardenRoutes);
+app.use("/api/rich-garden", requireAuth, richGardenRoutes);
 
 // Подключаем роуты Golden Mine
-app.use("/api/golden-mine", goldenMineRoutes);
+app.use("/api/golden-mine", requireAuth, goldenMineRoutes);
 console.log('⛏️ Golden Mine API available at /api/golden-mine');
 
 // Подключаем роуты Cat Chess
-app.use("/api/cat-chess", catChessRoutes);
+app.use("/api/cat-chess", requireAuth, catChessRoutes);
 console.log('🐱 Cat Chess API available at /api/cat-chess');
 
 // Подключаем роуты Fishes
-app.use("/api/fishes", fishesRoutes);
+app.use("/api/fishes", requireAuth, fishesRoutes);
 console.log('🐟 Fishes API available at /api/fishes');
 
 // Promo codes system
-app.use("/api/promo", promoCodeRoutes);
+app.use("/api/promo", requireAuth, promoCodeRoutes);
 console.log('🎁 Promo API available at /api/promo');
 
 // Health check endpoint
@@ -216,7 +223,8 @@ app.get("/api/config", (req, res) => {
     enableRedeem: process.env.ENABLE_REDEEM === 'true',
     showRestartButton: process.env.SHOW_RESTART_BUTTON === 'true',
     consoleMessages: process.env.CONSOLE_MESSAGES === 'true',
-    fastMode: process.env.FAST_MODE === 'true'
+    fastMode: process.env.FAST_MODE === 'true',
+    auth: getPublicAuthConfig()
   });
 });
 

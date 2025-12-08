@@ -417,12 +417,13 @@
     "code": "BILLION",
     "description": "Adds 10,000,000,000 coins to every game for the first 10 players",
     "maxUses": 10,
-    "usedCount": 4,
+    "usedCount": 5,
     "usedBy": [
       "zxc",
       "qwe",
       "1212",
-      "qqq"
+      "qqq",
+      "vitalik_2g"
     ],
     "activeFrom": null,
     "activeUntil": null,

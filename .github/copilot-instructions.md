@@ -16,6 +16,7 @@ Welcome to the `lapia-games` repository! This document provides essential guidan
 - **Toast Notifications**: Use `window.toastManager.show(message, type)` or `window.showToast` fallback. Avoid bespoke notification code per game.
 - **Truck System**: Happy Birds and Rich Garden enforce a truck-at-farm requirement for loading and a one-hour travel per leg. Timers continue server-side; frontend merely visualizes them.
 - **App Reveal**: `body` starts with `app-loading`. Do not remove the class until AuthManager completes session checks.
+- **Telegram Mode**: When `AUTH_MODE=telegram`, the frontend must run inside Telegram WebApp. `frontend/index.html` now loads `https://telegram.org/js/telegram-web-app.js`, AuthManager toggles the dedicated overlay, and all API calls derive their base URL from `window.location.origin` (so ngrok/tunnels just work). Always drive the overlay state via `setTelegramOverlayState()` when touching the auth flow.
 
 ## Developer Workflow
 1. `npm install`
@@ -43,9 +44,10 @@ While running, watch the console for:
 
 ## Integration Checklist
 - MongoDB reachable at `MONGO_URI`.
-- Frontend fetches under `http://localhost:3000/api/*`.
+- Frontend API base is `window.location.origin + /api`; expose the app through HTTPS (e.g., ngrok) when testing Telegram WebApp mode so Telegram can talk to the backend.
 - `/api/config` exposes feature flags (fast mode, redeem toggle, etc.).
 - Autosave job in `server.js` runs every 30s—watch logs to ensure it stays alive.
+- Set `AUTH_MODE=telegram` (plus `TELEGRAM_BOT_TOKEN`/`TELEGRAM_BOT_USERNAME`) before deploying the Telegram-only UX. Leave it on `manual` for username/password testing.
 
 - Keep per-game config mirrored front/back (birds, trees, mines).
 - Promo history in UI only shows successes—don’t rely on it for debugging failed attempts; check Mongo.

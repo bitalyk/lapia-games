@@ -87,6 +87,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (registerBtn) {
     registerBtn.addEventListener("click", async () => {
+      if (registerBtn.disabled) {
+        showAuthMessage("Registration is disabled in this mode.", "error");
+        return;
+      }
+
       const usernameInput = document.getElementById("username");
       const passwordInput = document.getElementById("password");
       
@@ -115,6 +120,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (loginBtn) {
     loginBtn.addEventListener("click", async () => {
+      if (loginBtn.disabled) {
+        showAuthMessage("Use the Telegram WebApp to log in.", "error");
+        return;
+      }
+
       const usernameInput = document.getElementById("username");
       const passwordInput = document.getElementById("password");
       
@@ -148,7 +158,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (usernameInput && passwordInput) {
     const handleEnter = (event) => {
       if (event.key === "Enter") {
-        if (loginBtn) loginBtn.click();
+        if (loginBtn && !loginBtn.disabled) {
+          loginBtn.click();
+        } else if (loginBtn && loginBtn.disabled) {
+          showAuthMessage("Telegram login required. Open via Telegram.", "error");
+        }
       }
     };
 

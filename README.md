@@ -36,9 +36,13 @@ Lapia Games is a browser-based idle/clicker hub that stitches multiple games int
 
 ### Environment Variables
 - `MONGO_URI` – Mongo connection string.
+- `PORT` – Express port (defaults to `3000`).
 - `ENABLE_REDEEM` – Toggle promo endpoints + UI (default `true`).
 - `CONSOLE_MESSAGES` – Enable verbose logs in certain games.
-- `PORT` – Express port (defaults to `3000`).
+- `AUTH_MODE` – `manual` (default) to show username/password, or `telegram` to enable the Telegram-only overlay + WebApp login.
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_USERNAME` – Required when `AUTH_MODE=telegram` so the backend can verify signed `initData` payloads.
+- `SESSION_TIMEOUT` – Seconds before Telegram sessions expire (default `86400`).
+- `TOKEN_REFRESH_ENABLED`, `ALLOW_MULTIPLE_SESSIONS` – Fine-tune session refresh cadence and whether multiple devices can stay logged in simultaneously.
 
 ## Architecture Overview
 - **Backend (`backend/`)** – Express + ES modules. Routes under `/api/*`, background jobs for autosave, and Mongo models for long-term storage. Key entry: `backend/server.js`.
@@ -50,7 +54,9 @@ Lapia Games is a browser-based idle/clicker hub that stitches multiple games int
 
 ### Authentication Flow
 - Frontend logic lives in `frontend/auth/auth-manager.js`; backend endpoints are defined in `backend/routes/auth.js` and `backend/routes/users.js`.
-- Passwords are stored as `passwordHash` (bcrypt). Sessions rely on client-side storage + periodic refreshes.
+- Passwords are stored as `passwordHash` (bcrypt). Sessions rely on client-local storage plus periodic refreshes triggered by `authConfig.session.tokenRefreshEnabled`.
+- `AuthManager` now loads the Telegram WebApp SDK, drives a dedicated overlay, and builds API URLs from `window.location.origin` so ngrok URLs work transparently.
+- Set `AUTH_MODE=telegram` to force Telegram-only login. The overlay hides the manual form, shows a connecting/waiting state, and only reveals the rest of the UI when Telegram auto-login succeeds.
 - After login the server records the user’s daily activity for streak achievements and returns currency snapshots, LPA balance, and per-game progress.
 - The DOM starts with `body.app-loading`; AuthManager removes it once session validation completes, ensuring the login UI fades in smoothly.
 
