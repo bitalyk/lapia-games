@@ -4,8 +4,9 @@
 
 .golden-mine-game {
     max-width: 1400px;
+    width: min(100%, 1400px);
     margin: 0 auto;
-    padding: 32px;
+    padding: clamp(20px, 5vw, 36px);
     font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
     background: radial-gradient(circle at 20% 20%, rgba(255, 198, 109, 0.12), transparent 50%),
         radial-gradient(circle at 85% 0%, rgba(100, 255, 255, 0.12), transparent 40%),
@@ -284,13 +285,56 @@
 
 @media (max-width: 640px) {
     .golden-mine-game {
-        padding: 20px;
+        padding: clamp(16px, 6vw, 22px);
     }
 
     .game-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 18px;
+    }
+}
+
+@media (max-width: 768px) {
+    .game-content {
+        gap: 20px;
+    }
+
+    .sidebar {
+        flex-direction: column;
+    }
+
+    .inventory,
+    .truck-section {
+        width: 100%;
+    }
+}
+
+@media (max-width: 520px) {
+    .game-header {
+        padding: 20px;
+    }
+
+    .coins-display,
+    .collect-all-btn,
+    .mine-actions button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .game-content {
+        gap: 16px;
+    }
+
+    .mines-section,
+    .sidebar .inventory,
+    .sidebar .truck-section {
+        padding: 18px;
+        border-radius: 20px;
+    }
+
+    .collect-all-btn {
+        text-align: center;
     }
 }
 

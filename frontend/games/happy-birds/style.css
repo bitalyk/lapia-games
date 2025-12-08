@@ -1,7 +1,8 @@
 .happy-birds-game {
     max-width: 1000px;
+    width: min(100%, 1000px);
     margin: 0 auto;
-    padding: 20px;
+    padding: clamp(16px, 4vw, 28px);
     font-family: 'Segoe UI', system-ui, sans-serif;
 }
 
@@ -41,34 +42,40 @@
 }
 
 .game-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
     margin-bottom: 20px;
 }
 
 .stat-card {
     background: white;
-    padding: 15px;
+    flex: 1 1 200px;
+    padding: 16px;
     border-radius: 8px;
-    text-align: center;
+    text-align: left;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .stat-card h3 {
-    margin: 0 0 8px 0;
+    margin: 0;
     font-size: 14px;
     color: #666;
 }
 
 .stat-value {
-    font-size: 24px;
+    font-size: 1.25rem;
     font-weight: bold;
     color: #2c5530;
+    word-break: break-word;
 }
 
 .game-controls {
     display: flex;
+    flex-wrap: wrap;
     gap: 15px;
     margin-bottom: 25px;
 }
@@ -190,10 +197,11 @@
 /* Additional styles from game.js */
 .happy-birds-game {
     max-width: 1000px;
+    width: min(100%, 1000px);
     margin: 0 auto;
     background: white;
-    border-radius: 12px;
-    padding: 20px;
+    border-radius: 20px;
+    padding: clamp(16px, 4vw, 32px);
     box-shadow: 0 4px 20px rgba(0,0,0,0.1);
     font-family: 'Segoe UI', system-ui, sans-serif;
     color: #2d3436;
@@ -474,4 +482,68 @@
 .truck-btn:disabled {
     background: #6c757d;
     cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+    .happy-birds-game {
+        border-radius: 16px;
+    }
+
+    .happy-birds-game .game-header,
+    .happy-birds-game .truck-status {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .happy-birds-game .game-controls,
+    .happy-birds-game .bird-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .happy-birds-game .birds-grid,
+    .happy-birds-game .eggs-grid,
+    .happy-birds-game .birds-list,
+    .happy-birds-game .truck-inventory-grid {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        width: 100%;
+    }
+
+    .happy-birds-game .stat-card,
+    .happy-birds-game .bird-card,
+    .happy-birds-game .egg-card,
+    .happy-birds-game .truck-section {
+        width: 100%;
+    }
+}
+
+@media (max-width: 540px) {
+    .happy-birds-game {
+        padding: clamp(12px, 6vw, 18px);
+    }
+
+    .happy-birds-game #birds-canvas {
+        height: 160px;
+    }
+
+    .happy-birds-game .game-controls,
+    .happy-birds-game .truck-controls {
+        gap: 12px;
+    }
+
+    .happy-birds-game .control-btn,
+    .happy-birds-game .hb-buy-btn,
+    .happy-birds-game .truck-btn,
+    .happy-birds-game .bird-controls button {
+        width: 100%;
+    }
+
+    .happy-birds-game .game-messages {
+        top: auto;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        max-width: calc(100vw - 32px);
+    }
 }

@@ -1,9 +1,12 @@
 .fishes-game {
-    padding: 24px;
+    padding: clamp(16px, 4vw, 28px);
     display: flex;
     flex-direction: column;
     gap: 24px;
     color: #123;
+    max-width: 1200px;
+    width: min(100%, 1200px);
+    margin: 0 auto;
 }
 
 .fishes-game .game-header {
@@ -61,6 +64,7 @@
 
 .fishes-game .game-content {
     display: flex;
+    flex-wrap: wrap;
     gap: 24px;
     align-items: flex-start;
 }
@@ -396,6 +400,70 @@
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+}
+
+@media (max-width: 960px) {
+    .fishes-game .game-content {
+        flex-direction: column;
+    }
+
+    .fishes-game .sidebar {
+        width: 100%;
+    }
+
+    .fishes-game .aquarium-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .fishes-game {
+        padding: clamp(14px, 6vw, 20px);
+    }
+
+    .fishes-game .game-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .fishes-game .header-controls {
+        flex-wrap: wrap;
+    }
+
+    .fishes-game .fish-actions,
+    .fishes-game .food-panel .food-actions {
+        flex-direction: column;
+    }
+
+    .fishes-game .fish-actions button,
+    .fishes-game .food-panel button,
+    .fishes-game .expand-button,
+    .fishes-game .fish-slot .open-shop,
+    .fishes-game .shop-card .buy-fish-button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .fishes-game .aquarium-panel,
+    .fishes-game .shop-panel,
+    .fishes-game .food-panel {
+        padding: 18px;
+    }
+
+    .fishes-game .aquarium-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .fishes-game .header-controls .resource {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .fishes-game .game-header h1 {
+        font-size: 26px;
+    }
 }
 
 .fishes-game .food-panel button:not(:disabled):hover {
