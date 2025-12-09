@@ -192,8 +192,10 @@ const HAPPY_BIRD_BUNDLES = [
 ];
 
 const HAPPY_BIRD_UPGRADES = [
-  { key: "helicopterTransport", name: "Helicopter Transport", cost: 10000, description: "Cuts truck travel to 5 minutes." },
-  { key: "autoCollect", name: "No Collection Timer", cost: 25000, description: "Eggs flow directly into storage with no cap." }
+  { key: "helicopterTransport", name: "Helicopter Transport", cost: 10000, description: "Unlocks the helicopter with 5× crates and 5-minute flights." },
+  { key: "autoCollect", name: "No Collection Timer", cost: 25000, description: "Eggs flow directly into storage with no cap." },
+  { key: "noBirdLimit", name: "No Bird Limit in Farm", cost: 50000, description: "Removes all bird population caps on the farm." },
+  { key: "noInventoryLimit", name: "Unlimited Crates & Cage", cost: 100000, description: "Removes egg crate and bird cage limits for every vehicle." }
 ];
 
 class HappyBirdsShopController extends BaseShopController {

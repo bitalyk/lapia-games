@@ -20,6 +20,7 @@ import achievementsRoutes from "./routes/achievements.js";
 import promoCodeRoutes from "./routes/promo-codes.js";
 import friendsRoutes from "./routes/friends.js";
 import leaderboardRoutes from "./routes/leaderboards.js";
+import { reconcileHappyBirdsTransport } from "./services/happy-birds-transport-reconciler.js";
 import authConfig, { getPublicAuthConfig } from "./config/auth-config.js";
 import requireAuth from "./middleware/require-auth.js";
 
@@ -146,6 +147,8 @@ async function saveProgress() {
         }
       }
     }
+
+    await reconcileHappyBirdsTransport();
   } catch (error) {
     console.error('Progress save error:', error);
   }

@@ -503,15 +503,14 @@ class AchievementManager {
     }
 
     const accessors = this.getGameAccessors(user);
+    const perGameDebit = conversions * CONVERSION_COST_PER_GAME;
 
-    for (let i = 0; i < conversions; i += 1) {
-      GAME_IDS.forEach((gameId) => {
-        const accessor = accessors[gameId];
-        const current = clampNumber(accessor.get());
-        accessor.set(current - CONVERSION_COST_PER_GAME);
-      });
-      user.lpaBalance += 1;
-    }
+    GAME_IDS.forEach((gameId) => {
+      const accessor = accessors[gameId];
+      const current = clampNumber(accessor.get());
+      accessor.set(current - perGameDebit);
+    });
+    user.lpaBalance += conversions;
 
     const syncResult = this.syncAllCurrency(user);
 

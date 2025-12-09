@@ -20,6 +20,11 @@ const eggSchema = new mongoose.Schema({
   purple: { type: Number, default: 0 },
 }, { _id: false });
 
+const birdCageSchema = new mongoose.Schema({
+  birds: { type: birdSchema, default: () => ({}) },
+  total: { type: Number, default: 0 }
+}, { _id: false });
+
 // Rich Garden Schemas
 const treeSchema = new mongoose.Schema({
   type: { type: String, required: true, enum: ['common', 'bronze', 'silver', 'golden', 'platinum', 'diamond'] },
@@ -171,7 +176,9 @@ function createDefaultFishesProgress() {
 
 const happyBirdsUpgradeSchema = new mongoose.Schema({
   helicopterTransport: { type: Boolean, default: false },
-  autoCollect: { type: Boolean, default: false }
+  autoCollect: { type: Boolean, default: false },
+  noBirdLimit: { type: Boolean, default: false },
+  noInventoryLimit: { type: Boolean, default: false }
 }, { _id: false });
 
 const richGardenUpgradeSchema = new mongoose.Schema({
@@ -371,6 +378,11 @@ const userSchema = new mongoose.Schema({
   truckLocation: { type: String, enum: ['farm', 'traveling_to_city', 'city', 'traveling_to_farm'], default: 'farm' },
   truckDepartureTime: { type: Date, default: null },
   truckInventory: { type: eggSchema, default: () => ({}) },
+  truckBirdCage: { type: birdCageSchema, default: () => ({ birds: {}, total: 0 }) },
+  helicopterInventory: { type: eggSchema, default: () => ({}) },
+  helicopterLocation: { type: String, enum: ['farm', 'traveling_to_city', 'city', 'traveling_to_farm'], default: 'farm' },
+  helicopterDepartureTime: { type: Date, default: null },
+  helicopterBirdCage: { type: birdCageSchema, default: () => ({ birds: {}, total: 0 }) },
   
   // Новые поля для платформы
   platformStats: { 

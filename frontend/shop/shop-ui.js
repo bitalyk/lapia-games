@@ -166,7 +166,7 @@ export class ShopUI {
             }
 
             const conversionTrigger = target.closest('.open-conversion-dialog');
-            if (conversionTrigger && shopRoot.contains(conversionTrigger)) {
+            if (conversionTrigger && conversionTrigger.closest('[data-tab-panel="exchange"]')) {
                 e.preventDefault();
                 this.openConversionDialog().catch(() => {
                     /* noop */

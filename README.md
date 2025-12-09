@@ -9,7 +9,9 @@ Lapia Games is a browser-based idle/clicker hub that stitches multiple games int
   - [Authentication Flow](#authentication-flow)
   - [Game Menu](#game-menu)
   - [Achievements](#achievements)
+  - [Leaderboards & Lifetime Earnings](#leaderboards--lifetime-earnings)
   - [Exchange & Promo Center](#exchange--promo-center)
+  - [Friend Center & Invites](#friend-center--invites)
 4. [Games](#games)
   - [Happy Birds](#happy-birds)
   - [Rich Garden](#rich-garden)
@@ -72,9 +74,22 @@ Lapia Games is a browser-based idle/clicker hub that stitches multiple games int
 - Client modal is rendered by `AuthManager.renderAchievementModal()`: it shows cards per catalog entry, live streak progress, and conversion readiness. Counts stay in sync via `/api/achievements/status/:username` and `record-activity`.
 - Autosave + background refresh keep the modal up to date even when the user idles in games.
 
+### Leaderboards & Lifetime Earnings
+- `backend/services/earnings-tracker.js` captures every coin/LPA payout (game sales, promo rewards, conversions, achievements) and aggregates them into `user.earningsTracker`.
+- `backend/services/leaderboard-service.js` queries those aggregates, caches the top 10 per metric for five minutes, and exposes `/api/leaderboards` endpoints (global coins, per-game totals, total LPA, and the personalized `/user/:username` summary).
+- Cache invalidation is automatic—`EarningsTracker.recordTransaction()` now busts affected metrics, so new sales appear in the API immediately without restarting the server.
+- Frontend module `frontend/js/leaderboard-dashboard.js` renders the new dashboard section inside `frontend/index.html`. It subscribes to `platformLogin`/`platformLogout`, fetches the REST endpoints, and provides refresh buttons plus skeleton states for slower networks.
+- `/api/achievements/coin-progress/:username` powers the updated achievements modal summary, showing true lifetime totals and the next coin milestone.
+
 ### Exchange & Promo Center
 - Exchange UI lives in `frontend/shop/` (reused modal). Conversion requires 100 coins from each game per LPA token. Backend double-checks capacity in `AchievementManager.performConversion`.
 - Global promo input/history sits inside the game menu and uses `/api/promo/redeem` and `/api/promo/history/:username`. Only the ten most recent successful entries are displayed client-side for clarity.
+
+### Friend Center & Invites
+- Frontend module: `frontend/js/friends/friend-center.js` renders invite quotas, referral links, and recent invite activity inside the platform menu.
+- Backend routes live in `backend/routes/friends.js` and call `FriendInvitationManager` to generate invite codes, validate redemptions, and grant bonuses.
+- Successful invites feed `user.friendInvites` plus the social achievements; ensure you `markModified('friendInvites')` when editing deeply nested arrays/document fields.
+- Telegram and manual modes share the same flow—`require-auth` injects the caller’s username so `/api/friends/*` endpoints don’t need extra parameters.
 
 ## Games
 
@@ -85,8 +100,10 @@ Lapia Games is a browser-based idle/clicker hub that stitches multiple games int
   2. Eggs accumulate for up to six hours offline.
   3. Collect eggs, load them into the truck, send truck to the city (1 hour travel each way).
   4. Sell in the city for coins, repeat, upgrade flock.
-- **Key Files**: `backend/routes/happy-birds.js`, `frontend/games/happy-birds/game.js`.
+- **Key Files**: `backend/routes/happy-birds.js`, `frontend/games/happy-birds/game.js`, transportation brief in `docfiles/finished/info-transportation-system.md`.
 - **Tips**: Production only begins after purchasing the first bird; keep truck location in mind (city for selling, farm for loading). Redeem code `SKIPTIMER` shortens waits when enabled.
+- **Logistics Revamp (Dec 2025)**: Transportation now models two parallel vehicles (truck + helicopter) with per-vehicle egg crates, bird cages, travel timers, and farm-limit aware releases. Use `GET /api/game/transportation/:username` for full snapshots or `GET /api/game/transport/progress/:username` for lightweight travel polling; see the transportation doc for upgrade rules and backfill notes.
+- **Batch Loading (Dec 2025)**: The `/api/game/transport/load-eggs` endpoint now accepts a `loads` array (one entry per color). The frontend aggregates all positive egg counts into a single request, and the response returns `loadResults` plus refreshed inventories so the UI can surface partial successes without extra calls.
 
 ### Rich Garden
 - **Theme**: Hex-style orchard management with tree upgrades and a produce truck.
@@ -131,8 +148,13 @@ Lapia Games is a browser-based idle/clicker hub that stitches multiple games int
 ## API Highlights
 - **Auth & Users** (`backend/routes/auth.js`, `backend/routes/users.js`): register, login, fetch platform profile, platform stats.
 - **Achievements** (`backend/routes/achievements.js`): `GET /achievements/status/:username`, `POST /achievements/convert`, `POST /achievements/record-activity`, `POST /achievements/record-invite`.
+- **Lifetime Progress**: `GET /achievements/coin-progress/:username` returns total coins/LPA plus per-game milestones for the achievements modal and dashboard.
+- **Friends & Invites** (`backend/routes/friends.js`): issue invite codes, list pending/successful invites, and award referral bonuses alongside the `friendInviter` achievement.
 - **Games**: each game has its own router under `backend/routes/` (`happy-birds.js`, `rich-garden.js`, `golden-mine.js`, `cat-chess.js`, `fishes.js`). They all expect `{ username }` payloads and return validated progress objects.
 - **Platform** (`backend/routes/platform.js`): shared stats, onboarding helpers, cross-game dashboards.
+- **Leaderboards** (`backend/routes/leaderboards.js`): `GET /total-coins`, `GET /game/:slug`, `GET /lpa`, and `GET /user/:username` (dashboard summary). All routes accept `limit`/`offset` (default top 10) and include the caller’s rank when authenticated.
+- **Happy Birds Transport** (`backend/routes/happy-birds.js`): `GET /transportation/:username`, `GET /transport/progress/:username`, and the `/transport/*` POST endpoints expose the new truck/helicopter logistics, crate loading, bird releases, and travel controls.
+- **Transport Loading Contract**: `POST /api/game/transport/load-eggs` accepts `{ vehicle, loads: [{ color, amount }] }`, enforces farm-only loading, and returns `{ eggs, truckInventory, transportation, loadResults }` so clients can highlight per-color outcomes in a single call.
 
 ## Development Workflow
 - **Install & Run** – see [Quick Start](#quick-start).
@@ -143,7 +165,7 @@ Lapia Games is a browser-based idle/clicker hub that stitches multiple games int
   2. Launch each game via the menu and ensure production starts.
   3. Send trucks in both directions to verify travel timers.
   4. Redeem a code, then confirm it cannot be reused.
-  5. Open achievements and exchange to confirm currency snapshots refresh.
+  5. Open achievements, exchange, and the leaderboard dashboard to confirm lifetime totals, ranks, and per-game breakdowns refresh without server restarts.
 
 ## Project Layout
 ```

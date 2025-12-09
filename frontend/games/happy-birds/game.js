@@ -23,6 +23,14 @@ export default class HappyBirdsGame {
         this.truckInventory = {};
         // Production always active
         
+        this.transportation = null;
+        this.activeVehicle = 'truck';
+        this.vehicleOrder = ['truck', 'helicopter'];
+        this.vehicleMeta = {
+            truck: { icon: '🚚', label: 'Truck' },
+            helicopter: { icon: '🚁', label: 'Helicopter' }
+        };
+
         this.BIRDS = {
             red: { cost: 1000, eps: 1, eggsPerCoin: 100, label: "Red" },
             orange: { cost: 2500, eps: 2, eggsPerCoin: 80, label: "Orange" },
@@ -37,6 +45,123 @@ export default class HappyBirdsGame {
     setGameManager(gameManager) {
         this.gameManager = gameManager;
         if (this.consoleMessages) console.log('🎮 Game Manager set for Happy Birds');
+    }
+
+    normalizeTransportationPayload(payload) {
+        if (!payload || !payload.vehicles) {
+            return null;
+        }
+        const normalized = {
+            ...payload,
+            vehicles: {}
+        };
+        Object.entries(payload.vehicles).forEach(([vehicle, data]) => {
+            normalized.vehicles[vehicle] = {
+                ...data,
+                departureTime: data?.departureTime ? new Date(data.departureTime) : null,
+                eggCrates: { ...(data?.eggCrates || {}) },
+                birdCage: {
+                    total: data?.birdCage?.total || 0,
+                    birds: { ...(data?.birdCage?.birds || {}) }
+                }
+            };
+        });
+        return normalized;
+    }
+
+    updateTransportationState(payload) {
+        if (!payload) {
+            return;
+        }
+        this.transportation = this.normalizeTransportationPayload(payload);
+        this.ensureActiveVehicleAvailable();
+        const truck = this.transportation?.vehicles?.truck;
+        if (truck) {
+            this.truckLocation = truck.location || this.truckLocation;
+            this.truckDepartureTime = truck.departureTime || null;
+            this.truckInventory = { ...(truck.eggCrates || {}) };
+        }
+    }
+
+    ensureActiveVehicleAvailable() {
+        if (this.transportation?.vehicles?.[this.activeVehicle]?.available) {
+            return;
+        }
+        const fallback = this.vehicleOrder.find((vehicle) => this.transportation?.vehicles?.[vehicle]?.available);
+        if (fallback) {
+            this.activeVehicle = fallback;
+        }
+    }
+
+    getVehicleData(vehicle = this.activeVehicle) {
+        return this.transportation?.vehicles?.[vehicle] || null;
+    }
+
+    getActiveVehicle() {
+        return this.activeVehicle;
+    }
+
+    setActiveVehicle(vehicle) {
+        if (!this.transportation?.vehicles?.[vehicle]?.available) {
+            this.showGameMessage('Vehicle is locked. Unlock it in the LPA shop first.', 'info');
+            return;
+        }
+        this.activeVehicle = vehicle;
+        this.renderTransportationPanel();
+    }
+
+    formatVehicleLocation(location) {
+        const map = {
+            farm: 'Farm',
+            city: 'City',
+            traveling_to_city: 'Traveling → City',
+            traveling_to_farm: 'Traveling → Farm'
+        };
+        return map[location] || 'Unknown';
+    }
+
+    formatNumber(value) {
+        return new Intl.NumberFormat().format(Math.floor(value || 0));
+    }
+
+    formatPercent(value) {
+        if (!Number.isFinite(value)) return '—';
+        return `${Math.round(value)}%`;
+    }
+
+    formatBirdLabel(color) {
+        return this.BIRDS[color]?.label || color;
+    }
+
+    getTotalFarmBirds() {
+        return Object.values(this.birds || {}).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    }
+
+    getTotalCagedBirds() {
+        if (!this.transportation?.vehicles) return 0;
+        return this.vehicleOrder.reduce((sum, vehicle) => {
+            const cage = this.transportation.vehicles[vehicle]?.birdCage;
+            return sum + (cage?.total || 0);
+        }, 0);
+    }
+
+    getVehicleTimerLabel(vehicleData) {
+        if (!vehicleData) return 'Unknown';
+        if (vehicleData.location === 'farm' || vehicleData.location === 'city') {
+            return 'Idle';
+        }
+        if (!vehicleData.departureTime || !vehicleData.travelTimeMs) {
+            return 'Traveling…';
+        }
+        const elapsed = Date.now() - vehicleData.departureTime.getTime();
+        const remaining = Math.max(0, vehicleData.travelTimeMs - elapsed);
+        if (remaining <= 0) {
+            return 'Arriving…';
+        }
+        const mins = Math.floor(remaining / 60000);
+        const secs = Math.max(0, Math.floor((remaining % 60000) / 1000));
+        const minPart = mins > 0 ? `${mins}m ` : '';
+        return `${minPart}${secs}s left`;
     }
 
     // Load config from server
@@ -123,6 +248,19 @@ export default class HappyBirdsGame {
                 this.savedProduced = data.savedProduced || {};
                 this.lastSaveTime = data.lastSaveTime ? new Date(data.lastSaveTime) : null;
                 this.productionStart = data.productionStart ? new Date(data.productionStart) : null;
+                if (data.transportation) {
+                    this.updateTransportationState(data.transportation);
+                }
+                if (this.transportation?.vehicles?.truck) {
+                    const truck = this.transportation.vehicles.truck;
+                    this.truckLocation = truck.location || this.truckLocation;
+                    this.truckDepartureTime = truck.departureTime || null;
+                    this.truckInventory = { ...(truck.eggCrates || {}) };
+                } else {
+                    this.truckLocation = data.truckLocation || this.truckLocation;
+                    this.truckDepartureTime = data.truckDepartureTime ? new Date(data.truckDepartureTime) : null;
+                    this.truckInventory = data.truckInventory || {};
+                }
 
                 // Calculate current produced
                 this.updateProduced();
@@ -188,11 +326,14 @@ export default class HappyBirdsGame {
                 this.savedProduced = data.savedProduced || {};
                 this.lastSaveTime = data.lastSaveTime ? new Date(data.lastSaveTime) : null;
                 this.productionStart = data.productionStart ? new Date(data.productionStart) : null;
-                
-                // Truck system data
-                this.truckLocation = data.truckLocation || 'farm';
-                this.truckDepartureTime = data.truckDepartureTime ? new Date(data.truckDepartureTime) : null;
-                this.truckInventory = data.truckInventory || {};
+                if (data.transportation) {
+                    this.updateTransportationState(data.transportation);
+                }
+
+                const truck = this.transportation?.vehicles?.truck;
+                this.truckLocation = truck?.location || data.truckLocation || 'farm';
+                this.truckDepartureTime = truck?.departureTime || (data.truckDepartureTime ? new Date(data.truckDepartureTime) : null);
+                this.truckInventory = { ...(truck?.eggCrates || data.truckInventory || {}) };
                 // Production always active
 
                 // Calculate current produced
@@ -291,9 +432,10 @@ export default class HappyBirdsGame {
     // Buy bird
     async buyBird(color) {
         // Allow buying first bird at farm, otherwise require truck at city
-        const totalBirds = Object.values(this.birds).reduce((sum, count) => sum + count, 0);
-        if (totalBirds > 0 && this.truckLocation !== 'city') {
-            this.showGameMessage('Truck must be at city to buy birds!', 'error');
+        const totalBirds = this.getTotalFarmBirds() + this.getTotalCagedBirds();
+        const activeVehicleData = this.getVehicleData();
+        if (totalBirds > 0 && activeVehicleData && activeVehicleData.location !== 'city') {
+            this.showGameMessage(`${this.vehicleMeta[this.activeVehicle]?.label || 'Vehicle'} must be at city to buy birds!`, 'error');
             return;
         }
 
@@ -319,7 +461,7 @@ export default class HappyBirdsGame {
             const response = await fetch('/api/game/buy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, color })
+                body: JSON.stringify({ username, color, vehicle: this.getActiveVehicle() })
             });
 
             const data = await response.json();
@@ -373,80 +515,123 @@ export default class HappyBirdsGame {
     }
 
     // Sell all eggs
-    async loadTruck() {
+    async loadVehicle() {
         const totalEggs = Object.values(this.eggs).reduce((sum, amount) => sum + amount, 0);
         if (totalEggs === 0) {
-            this.showGameMessage('No eggs to load into truck!', 'info');
+            this.showGameMessage('No eggs to load into the vehicle!', 'info');
+            return;
+        }
+
+        const loads = Object.entries(this.eggs)
+            .map(([color, amount]) => ({ color, amount }))
+            .filter((entry) => entry.amount > 0);
+
+        if (loads.length === 0) {
+            this.showGameMessage('No eggs to load into the vehicle!', 'info');
             return;
         }
 
         try {
-            const username = window.authManager?.currentUser?.username;
-            if (!username) return;
+            const summary = await this.loadVehicleBatch(loads, { silent: true });
+            const loadedTotal = (summary || [])
+                .filter((item) => item?.success)
+                .reduce((sum, item) => sum + (item.loaded || 0), 0);
 
-            for (const color in this.eggs) {
-                const amount = this.eggs[color] || 0;
-                if (amount > 0) {
-                    const response = await fetch('/api/game/load_truck', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, color, amount })
-                    });
-
-                    const data = await response.json();
-                    if (data.success) {
-                        this.eggs[color] = 0;
-                        this.truckInventory = data.truckInventory;
-                    } else {
-                        this.showGameMessage(data.error || 'Failed to load eggs into truck', 'error');
-                        return;
-                    }
-                }
+            if (loadedTotal > 0) {
+                this.showGameMessage(`Loaded ${this.formatNumber(loadedTotal)} eggs into ${this.vehicleMeta[this.activeVehicle]?.label || 'vehicle'}!`, 'success');
+                setTimeout(() => this.refreshGameStatus(), 1000);
+            } else {
+                const firstError = (summary || []).find((item) => item?.error)?.error;
+                this.showGameMessage(firstError || 'No eggs were loaded', 'info');
             }
-
-            this.updateUI();
-            this.showGameMessage(`Loaded all eggs into truck!`, 'success');
-            // Refresh status to ensure sync
-            setTimeout(() => this.refreshGameStatus(), 1000);
         } catch (error) {
-            console.error('Load truck error:', error);
-            this.showGameMessage('Failed to load eggs into truck', 'error');
+            console.error('Load vehicle error:', error);
+            this.showGameMessage('Failed to load eggs into vehicle', 'error');
         }
     }
 
     // Load specific color eggs into truck
-    async loadTruckEggs(color, amount) {
+    async loadVehicleEggs(color, amount, options = {}) {
+        return this.loadVehicleBatch([{ color, amount }], options);
+    }
+
+    async loadVehicleBatch(loads, options = {}) {
+        const { silent = false } = options;
         try {
             const username = window.authManager?.currentUser?.username;
-            if (!username) return;
+            if (!username) {
+                this.showGameMessage('Please log in to load eggs', 'error');
+                return false;
+            }
 
-            const response = await fetch('/api/game/load_truck', {
+            const payloadLoads = (loads || [])
+                .map(({ color, amount }) => ({ color, amount }))
+                .filter((entry) => entry.color && Number(entry.amount) > 0);
+
+            if (payloadLoads.length === 0) {
+                this.showGameMessage('Select eggs to load', 'info');
+                return false;
+            }
+
+            const response = await fetch('/api/game/transport/load-eggs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, color, amount })
+                body: JSON.stringify({ username, vehicle: this.getActiveVehicle(), loads: payloadLoads })
             });
 
             const data = await response.json();
             if (data.success) {
-                this.eggs[color] -= amount;
-                this.truckInventory = data.truckInventory;
+                this.eggs = data.eggs;
+                this.truckInventory = data.truckInventory || {};
+                if (data.transportation) {
+                    this.updateTransportationState(data.transportation);
+                }
                 this.updateUI();
-                this.showGameMessage(`Loaded ${amount} ${color} eggs into truck!`, 'success');
-                // Refresh status to ensure sync
-                setTimeout(() => this.refreshGameStatus(), 1000);
-            } else {
-                this.showGameMessage(data.error || 'Failed to load eggs into truck', 'error');
+                if (!silent) {
+                    const loadedTotal = (data.loadResults || [])
+                        .filter((item) => item.success)
+                        .reduce((sum, item) => sum + (item.loaded || 0), 0);
+                    if (loadedTotal > 0) {
+                        this.showGameMessage(`Loaded ${this.formatNumber(loadedTotal)} eggs into ${this.vehicleMeta[this.activeVehicle]?.label || 'vehicle'}!`, 'success');
+                    } else {
+                        const firstError = (data.loadResults || []).find((item) => item?.error)?.error;
+                        this.showGameMessage(firstError || 'No eggs were loaded', 'info');
+                    }
+                }
+                return data.loadResults || true;
             }
+
+            this.showGameMessage(data.error || 'Failed to load eggs into vehicle', 'error');
+            return false;
         } catch (error) {
-            console.error('Load truck eggs error:', error);
-            this.showGameMessage('Failed to load eggs into truck', 'error');
+            console.error('Load vehicle eggs error:', error);
+            this.showGameMessage('Failed to load eggs into vehicle', 'error');
+            return false;
         }
     }
 
     // Truck actions
     async truckGoToCity() {
-        if (this.truckLocation !== 'farm') {
-            this.showGameMessage('Truck is not at farm!', 'error');
+        return this.sendVehicle('to_city');
+    }
+
+    async sellTruckEggs() {
+        return this.sellVehicleEggs();
+    }
+
+    async releaseBirdsFromVehicle() {
+        const vehicle = this.getActiveVehicle();
+        const vehicleData = this.getVehicleData(vehicle);
+        if (!vehicleData) {
+            this.showGameMessage('Transportation data missing. Try refreshing.', 'error');
+            return;
+        }
+        if (vehicleData.location !== 'farm') {
+            this.showGameMessage('Vehicle must be at farm to release birds!', 'error');
+            return;
+        }
+        if ((vehicleData.birdCage?.total || 0) === 0) {
+            this.showGameMessage('No birds waiting in the cage.', 'info');
             return;
         }
 
@@ -454,39 +639,93 @@ export default class HappyBirdsGame {
             const username = window.authManager?.currentUser?.username;
             if (!username) return;
 
-            const response = await fetch('/api/game/truck_go_to_city', {
+            const response = await fetch('/api/game/transport/unload-birds', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle })
             });
 
             const data = await response.json();
             if (data.success) {
-                this.truckLocation = data.truckLocation;
-                this.truckDepartureTime = new Date(data.truckDepartureTime);
-                // Production continues during travel
+                this.birds = data.birds;
+                if (data.transportation) {
+                    this.updateTransportationState(data.transportation);
+                }
                 this.updateUI();
-                this.showGameMessage('Truck departed to city!', 'info');
-                // Refresh status to ensure sync
+                this.showGameMessage('Birds released to the farm!', 'success');
                 setTimeout(() => this.refreshGameStatus(), 1000);
             } else {
-                this.showGameMessage(data.error || 'Failed to send truck to city', 'error');
+                this.showGameMessage(data.error || 'Failed to release birds', 'error');
             }
         } catch (error) {
-            console.error('Truck go to city error:', error);
-            this.showGameMessage('Failed to send truck to city', 'error');
+            console.error('Release birds error:', error);
+            this.showGameMessage('Failed to release birds', 'error');
         }
     }
 
-    async sellTruckEggs() {
-        if (this.truckLocation !== 'city') {
-            this.showGameMessage('Truck must be at city to sell eggs!', 'error');
+    async sendVehicle(direction) {
+        const vehicle = this.getActiveVehicle();
+        const vehicleLabel = this.vehicleMeta[vehicle]?.label || 'Vehicle';
+        const vehicleData = this.getVehicleData(vehicle);
+        if (!vehicleData) {
+            this.showGameMessage('Transportation data missing. Try refreshing.', 'error');
             return;
         }
 
-        const totalTruckEggs = Object.values(this.truckInventory).reduce((sum, amount) => sum + amount, 0);
-        if (totalTruckEggs === 0) {
-            this.showGameMessage('No eggs in truck to sell!', 'error');
+        if (direction === 'to_city' && vehicleData.location !== 'farm') {
+            this.showGameMessage(`${vehicleLabel} must be at farm to depart.`, 'error');
+            return;
+        }
+
+        if (direction === 'to_farm' && vehicleData.location !== 'city') {
+            this.showGameMessage(`${vehicleLabel} must be at city to return.`, 'error');
+            return;
+        }
+
+        try {
+            const username = window.authManager?.currentUser?.username;
+            if (!username) return;
+
+            const response = await fetch('/api/game/transport/travel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, vehicle, direction })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                if (data.transportation) {
+                    this.updateTransportationState(data.transportation);
+                }
+                this.updateUI();
+                const message = direction === 'to_city' ? `${vehicleLabel} departed for the city!` : `${vehicleLabel} is heading back to the farm!`;
+                this.showGameMessage(message, 'info');
+                setTimeout(() => this.refreshGameStatus(), 1000);
+            } else {
+                this.showGameMessage(data.error || 'Failed to start travel', 'error');
+            }
+        } catch (error) {
+            console.error('Vehicle travel error:', error);
+            this.showGameMessage('Failed to start travel', 'error');
+        }
+    }
+
+    async sellVehicleEggs() {
+        const vehicle = this.getActiveVehicle();
+        const vehicleLabel = this.vehicleMeta[vehicle]?.label || 'Vehicle';
+        const vehicleData = this.getVehicleData(vehicle);
+        if (!vehicleData) {
+            this.showGameMessage('Transportation data missing. Try refreshing.', 'error');
+            return;
+        }
+        if (vehicleData.location !== 'city') {
+            this.showGameMessage(`${vehicleLabel} must be at city to sell eggs!`, 'error');
+            return;
+        }
+
+        const totalEggs = Object.values(vehicleData.eggCrates || {}).reduce((sum, amount) => sum + amount, 0);
+        if (totalEggs === 0) {
+            this.showGameMessage('No eggs loaded in this vehicle.', 'info');
             return;
         }
 
@@ -497,57 +736,30 @@ export default class HappyBirdsGame {
             const response = await fetch('/api/game/sell_truck_eggs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle })
             });
 
             const data = await response.json();
             if (data.success) {
                 this.coins = data.coins;
-                this.truckInventory = data.truckInventory;
+                this.truckInventory = data.truckInventory || {};
+                if (data.transportation) {
+                    this.updateTransportationState(data.transportation);
+                }
                 this.updateUI();
-                this.showGameMessage(`Sold truck eggs for ${data.soldFor} coins!`, 'success');
-                // Refresh status to ensure sync
+                this.showGameMessage(`Sold for ${this.formatNumber(data.soldFor || 0)} coins!`, 'success');
                 setTimeout(() => this.refreshGameStatus(), 1000);
             } else {
-                this.showGameMessage(data.error || 'Failed to sell truck eggs', 'error');
+                this.showGameMessage(data.error || 'Failed to sell eggs', 'error');
             }
         } catch (error) {
-            console.error('Sell truck eggs error:', error);
-            this.showGameMessage('Failed to sell truck eggs', 'error');
+            console.error('Sell vehicle eggs error:', error);
+            this.showGameMessage('Failed to sell eggs', 'error');
         }
     }
 
     async truckGoToFarm() {
-        if (this.truckLocation !== 'city') {
-            this.showGameMessage('Truck must be at city to return!', 'error');
-            return;
-        }
-
-        try {
-            const username = window.authManager?.currentUser?.username;
-            if (!username) return;
-
-            const response = await fetch('/api/game/truck_go_to_farm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
-            });
-
-            const data = await response.json();
-            if (data.success) {
-                this.truckLocation = data.truckLocation;
-                this.truckDepartureTime = new Date(data.truckDepartureTime);
-                this.updateUI();
-                this.showGameMessage('Truck returning to farm!', 'info');
-                // Refresh status to ensure sync
-                setTimeout(() => this.refreshGameStatus(), 1000);
-            } else {
-                this.showGameMessage(data.error || 'Failed to send truck back to farm', 'error');
-            }
-        } catch (error) {
-            console.error('Truck go to farm error:', error);
-            this.showGameMessage('Failed to send truck back to farm', 'error');
-        }
+        return this.sendVehicle('to_farm');
     }
 
     // Game loop for idle production
@@ -614,26 +826,24 @@ export default class HappyBirdsGame {
                 <!-- Управление -->
                 <div class="game-controls">
                     <button id="hb-collect-btn" class="control-btn collect">Collect Eggs</button>
-                    <button id="hb-load-truck-btn" class="control-btn sell">Put in Truck</button>
+                    <button id="hb-load-vehicle-btn" class="control-btn sell">Load Vehicle</button>
                 </div>
 
-                <!-- Truck System -->
-                <div class="truck-section">
-                    <h3>🚛 Delivery Truck</h3>
-                    <div class="truck-status">
-                        <div id="hb-truck-location" class="truck-location">Location: Farm</div>
-                        <div id="hb-truck-timer" class="truck-timer"></div>
+                <!-- Logistics Panel -->
+                <div class="logistics-section">
+                    <div class="section-header">
+                        <h3>🚚 Transportation & Storage</h3>
+                        <p class="section-subtitle">Manage egg crates, bird cages, and travel for each vehicle.</p>
                     </div>
-                    <div class="truck-inventory">
-                        <h4>Truck Inventory</h4>
-                        <div id="hb-truck-inventory" class="truck-inventory-grid">
-                            <!-- Динамически генерируется -->
-                        </div>
+                    <div id="hb-transportation-panel" class="transportation-panel">
+                        <div class="transportation-empty">Loading transportation data…</div>
                     </div>
-                    <div class="truck-controls">
-                        <button id="hb-go-to-city-btn" class="truck-btn go-to-city">Go to City</button>
-                        <button id="hb-sell-truck-eggs-btn" class="truck-btn sell-truck">Sell Truck Eggs</button>
-                        <button id="hb-go-to-farm-btn" class="truck-btn go-to-farm">Return to Farm</button>
+                </div>
+
+                <div class="farm-limits-section">
+                    <h3>🏡 Farm Population</h3>
+                    <div id="hb-farm-limits-panel" class="farm-limits-panel">
+                        <div class="farm-limits-empty">Farm limits will appear once transportation data loads.</div>
                     </div>
                 </div>
 
@@ -701,6 +911,7 @@ export default class HappyBirdsGame {
         if (!eggsGrid) return;
 
         eggsGrid.innerHTML = '';
+        const loadLabel = this.vehicleMeta[this.activeVehicle]?.label || 'Vehicle';
 
         for (const color in this.BIRDS) {
             const amount = this.eggs[color] || 0;
@@ -715,8 +926,8 @@ export default class HappyBirdsGame {
                         <div>Amount: ${amount}</div>
                         <div>Value: ${Math.floor(amount / bird.eggsPerCoin)} coins</div>
                     </div>
-                    <button class="hb-load-truck-btn" data-color="${color}">
-                        Load Truck
+                    <button class="hb-load-vehicle-btn" data-color="${color}">
+                        Load ${loadLabel}
                     </button>
                 `;
 
@@ -725,37 +936,152 @@ export default class HappyBirdsGame {
         }
     }
 
-    // Render truck inventory
-    renderTruckInventory() {
-        const truckInventoryEl = document.getElementById('hb-truck-inventory');
-        if (!truckInventoryEl) return;
+    renderTransportationPanel() {
+        const panel = document.getElementById('hb-transportation-panel');
+        if (!panel) return;
 
-        truckInventoryEl.innerHTML = '';
+        if (!this.transportation) {
+            panel.innerHTML = '<div class="transportation-empty">Transportation data will appear after the first status sync.</div>';
+            return;
+        }
 
-        let hasEggs = false;
-        for (const color in this.BIRDS) {
-            const amount = this.truckInventory[color] || 0;
-            if (amount > 0) {
-                hasEggs = true;
-                const bird = this.BIRDS[color];
-                const eggCard = document.createElement('div');
-                eggCard.className = 'truck-egg-card';
-                eggCard.setAttribute('data-color', color);
-                eggCard.innerHTML = `
-                    <h4>${bird.label} Eggs</h4>
-                    <div class="egg-stats">
-                        <div>Amount: ${amount}</div>
-                        <div>Value: ${Math.floor(amount / bird.eggsPerCoin)} coins</div>
+        const buttons = this.vehicleOrder.map((vehicle) => {
+            const meta = this.vehicleMeta[vehicle];
+            const vehicleData = this.transportation.vehicles[vehicle];
+            const locked = !vehicleData?.available;
+            const activeClass = vehicle === this.activeVehicle ? 'active' : '';
+            const lockedClass = locked ? 'locked' : '';
+            return `
+                <button class="vehicle-button ${activeClass} ${lockedClass}" data-vehicle-select="${vehicle}" ${locked ? 'disabled' : ''}>
+                    <span class="vehicle-icon">${meta.icon}</span>
+                    <span class="vehicle-label">${meta.label}</span>
+                    ${locked ? '<span class="vehicle-locked">Locked</span>' : ''}
+                </button>
+            `;
+        }).join('');
+
+        const activeVehicleData = this.getVehicleData(this.activeVehicle);
+        if (!activeVehicleData) {
+            panel.innerHTML = `<div class="transportation-empty">Select an available vehicle to manage logistics.</div><div class="vehicle-selector">${buttons}</div>`;
+            return;
+        }
+
+        const locationLabel = this.formatVehicleLocation(activeVehicleData.location);
+        const timerLabel = this.getVehicleTimerLabel(activeVehicleData);
+        const cageCapacity = activeVehicleData.birdCageCapacity;
+        const cageTotal = activeVehicleData.birdCage?.total || 0;
+        const cagePercent = Number.isFinite(cageCapacity) && cageCapacity > 0 ? Math.min(100, (cageTotal / cageCapacity) * 100) : 0;
+        const cageCapacityLabel = Number.isFinite(cageCapacity) ? `${this.formatNumber(cageTotal)} / ${this.formatNumber(cageCapacity)}` : `${this.formatNumber(cageTotal)} / ∞`;
+        const cageRows = Object.keys(this.BIRDS).map((color) => {
+            const count = activeVehicleData.birdCage?.birds?.[color] || 0;
+            if (!count) return '';
+            return `<li><span>${this.formatBirdLabel(color)}</span><span>${count}</span></li>`;
+        }).filter(Boolean).join('') || '<li class="muted">No birds waiting in cage.</li>';
+
+        const crateCards = Object.keys(this.BIRDS).map((color) => {
+            const bird = this.BIRDS[color];
+            const amount = activeVehicleData.eggCrates?.[color] || 0;
+            const max = activeVehicleData.crateCapacity?.[color];
+            const percent = Number.isFinite(max) && max > 0 ? Math.min(100, (amount / max) * 100) : 0;
+            const valueCoins = Math.floor(amount / bird.eggsPerCoin);
+            return `
+                <div class="crate-card" data-color="${color}">
+                    <div class="crate-header">
+                        <span>${bird.label} Eggs</span>
+                        <span>${this.formatNumber(amount)} / ${Number.isFinite(max) ? this.formatNumber(max) : '∞'}</span>
                     </div>
-                `;
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${percent}%;"></div>
+                    </div>
+                    <div class="crate-value">Value: ${this.formatNumber(valueCoins)} coins</div>
+                </div>
+            `;
+        }).join('');
 
-                truckInventoryEl.appendChild(eggCard);
-            }
+        const helicopterLockedBanner = !this.transportation.vehicles?.helicopter?.available
+            ? '<div class="helicopter-locked-banner">Unlock the helicopter in the LPA Shop (10,000 LPA) to gain 5× capacity and 5-minute flights.</div>'
+            : '';
+
+        const atFarm = activeVehicleData.location === 'farm';
+        const atCity = activeVehicleData.location === 'city';
+        const traveling = activeVehicleData.location?.startsWith('traveling');
+        const cageHasBirds = cageTotal > 0;
+        const cratesHaveEggs = Object.values(activeVehicleData.eggCrates || {}).some((value) => value > 0);
+
+        panel.innerHTML = `
+            ${helicopterLockedBanner}
+            <div class="vehicle-selector">${buttons}</div>
+            <div class="vehicle-status-card">
+                <div>
+                    <p class="vehicle-status-title">${this.vehicleMeta[this.activeVehicle].icon} ${this.vehicleMeta[this.activeVehicle].label}</p>
+                    <p class="vehicle-location">${locationLabel}</p>
+                </div>
+                <div class="vehicle-timer">${timerLabel}</div>
+            </div>
+            <div class="transport-grid">
+                <div class="transport-card">
+                    <div class="transport-card-header">
+                        <h4>Egg Crates</h4>
+                        <span>${cratesHaveEggs ? 'Loaded' : 'Empty'}</span>
+                    </div>
+                    <div class="crate-grid">
+                        ${crateCards}
+                    </div>
+                </div>
+                <div class="transport-card">
+                    <div class="transport-card-header">
+                        <h4>Bird Cage</h4>
+                        <span>${cageCapacityLabel}${Number.isFinite(cageCapacity) ? '' : ''}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${cagePercent}%;"></div>
+                    </div>
+                    <ul class="cage-list">${cageRows}</ul>
+                </div>
+            </div>
+            <div class="transport-actions">
+                <button class="transport-action" data-transport-action="release" ${(!atFarm || !cageHasBirds || traveling) ? 'disabled' : ''}>Release Birds</button>
+                <button class="transport-action" data-transport-action="to_city" ${(atFarm && !traveling) ? '' : 'disabled'}>Send to City</button>
+                <button class="transport-action" data-transport-action="sell" ${(!atCity || !cratesHaveEggs || traveling) ? 'disabled' : ''}>Sell at City</button>
+                <button class="transport-action" data-transport-action="to_farm" ${(atCity && !traveling) ? '' : 'disabled'}>Return to Farm</button>
+            </div>
+        `;
+    }
+
+    renderFarmLimitsPanel() {
+        const panel = document.getElementById('hb-farm-limits-panel');
+        if (!panel) return;
+
+        if (!this.transportation?.farmLimits) {
+            panel.innerHTML = '<div class="farm-limits-empty">Farm population will appear here once data syncs.</div>';
+            return;
         }
 
-        if (!hasEggs) {
-            truckInventoryEl.innerHTML = '<div class="empty-truck">Truck is empty</div>';
+        if (this.transportation?.upgrades?.noBirdLimit) {
+            panel.innerHTML = '<div class="farm-limits-unlimited">🎉 Unlimited Birds unlocked! No population caps apply.</div>';
+            return;
         }
+
+        const cards = Object.entries(this.transportation.farmLimits).map(([color, info]) => {
+            const current = info.current || 0;
+            const limit = info.limit || 0;
+            const percent = limit > 0 ? Math.min(100, (current / limit) * 100) : 0;
+            const warning = percent >= 90;
+            return `
+                <div class="farm-limit-card" data-color="${color}">
+                    <div class="farm-limit-header">
+                        <span>${this.formatBirdLabel(color)}</span>
+                        <span>${current}/${limit || '∞'}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill ${warning ? 'warning' : ''}" style="width: ${percent}%;"></div>
+                    </div>
+                    ${warning ? '<div class="limit-warning">⚠️ Near limit</div>' : ''}
+                </div>
+            `;
+        }).join('');
+
+        panel.innerHTML = `<div class="farm-limit-grid">${cards}</div>`;
     }
 
     // Update UI
@@ -817,36 +1143,17 @@ export default class HappyBirdsGame {
             totalEggsEl.textContent = `Total: ${totalEggs}`;
         }
 
-        // Update truck UI
-        const truckLocationEl = document.getElementById('hb-truck-location');
-        if (truckLocationEl) {
-            const locationText = {
-                'farm': 'At Farm',
-                'traveling_to_city': 'Traveling to City',
-                'city': 'At City',
-                'traveling_to_farm': 'Returning to Farm'
-            };
-            truckLocationEl.textContent = `Location: ${locationText[this.truckLocation] || 'Unknown'}`;
-        }
-
-        const truckTimerEl = document.getElementById('hb-truck-timer');
-        if (truckTimerEl && this.truckDepartureTime && (this.truckLocation === 'traveling_to_city' || this.truckLocation === 'traveling_to_farm')) {
-            const timeSinceDeparture = (Date.now() - this.truckDepartureTime.getTime()) / 1000;
-            const timeLeft = this.ONE_HOUR_SEC - timeSinceDeparture;
-            if (timeLeft <= 0) {
-                truckTimerEl.textContent = 'Arriving soon...';
-            } else {
-                const minsLeft = Math.floor(timeLeft / 60);
-                const secsLeft = Math.floor(timeLeft % 60);
-                truckTimerEl.textContent = `Arrival in: ${minsLeft}m ${secsLeft}s`;
-            }
-        } else {
-            truckTimerEl.textContent = '';
+        const loadVehicleBtn = document.getElementById('hb-load-vehicle-btn');
+        if (loadVehicleBtn) {
+            const label = this.vehicleMeta[this.activeVehicle]?.label || 'Vehicle';
+            loadVehicleBtn.textContent = `Load ${label}`;
+            loadVehicleBtn.disabled = !this.transportation?.vehicles?.[this.activeVehicle]?.available;
         }
 
         this.renderBirdsGrid();
         this.renderEggsGrid();
-        this.renderTruckInventory();
+        this.renderTransportationPanel();
+        this.renderFarmLimitsPanel();
     }
 
     // Initialize game
@@ -879,32 +1186,10 @@ export default class HappyBirdsGame {
             });
         }
 
-        const loadTruckBtn = document.getElementById('hb-load-truck-btn');
-        if (loadTruckBtn) {
-            loadTruckBtn.addEventListener('click', () => {
-                this.loadTruck();
-            });
-        }
-
-        // Truck control buttons
-        const goToCityBtn = document.getElementById('hb-go-to-city-btn');
-        if (goToCityBtn) {
-            goToCityBtn.addEventListener('click', () => {
-                this.truckGoToCity();
-            });
-        }
-
-        const sellTruckEggsBtn = document.getElementById('hb-sell-truck-eggs-btn');
-        if (sellTruckEggsBtn) {
-            sellTruckEggsBtn.addEventListener('click', () => {
-                this.sellTruckEggs();
-            });
-        }
-
-        const goToFarmBtn = document.getElementById('hb-go-to-farm-btn');
-        if (goToFarmBtn) {
-            goToFarmBtn.addEventListener('click', () => {
-                this.truckGoToFarm();
+        const loadVehicleBtn = document.getElementById('hb-load-vehicle-btn');
+        if (loadVehicleBtn) {
+            loadVehicleBtn.addEventListener('click', () => {
+                this.loadVehicle();
             });
         }
 
@@ -923,17 +1208,58 @@ export default class HappyBirdsGame {
         const eggsGrid = document.getElementById('hb-eggs-grid');
         if (eggsGrid) {
             eggsGrid.addEventListener('click', (e) => {
-                if (e.target.classList.contains('hb-load-truck-btn')) {
+                if (e.target.classList.contains('hb-load-vehicle-btn')) {
                     const color = e.target.dataset.color;
                     const amount = this.eggs[color] || 0;
                     if (amount > 0) {
-                        if (this.consoleMessages) console.log(`🚛 Load truck button clicked for ${color}, amount: ${amount}`);
-                        this.loadTruckEggs(color, amount);
+                        if (this.consoleMessages) console.log(`🚚 Load vehicle button clicked for ${color}, amount: ${amount}`);
+                        this.loadVehicleEggs(color, amount);
                     } else {
                         this.showGameMessage(`No ${color} eggs to load!`, 'error');
                     }
                 }
             });
+        }
+
+        this.bindTransportationEvents();
+    }
+
+    bindTransportationEvents() {
+        const panel = document.getElementById('hb-transportation-panel');
+        if (!panel) return;
+        panel.addEventListener('click', (event) => {
+            const vehicleButton = event.target.closest('[data-vehicle-select]');
+            if (vehicleButton) {
+                const vehicle = vehicleButton.dataset.vehicleSelect;
+                this.setActiveVehicle(vehicle);
+                this.updateUI();
+                return;
+            }
+
+            const actionButton = event.target.closest('[data-transport-action]');
+            if (actionButton) {
+                const action = actionButton.dataset.transportAction;
+                this.handleTransportAction(action);
+            }
+        });
+    }
+
+    handleTransportAction(action) {
+        switch (action) {
+            case 'release':
+                this.releaseBirdsFromVehicle();
+                break;
+            case 'to_city':
+                this.sendVehicle('to_city');
+                break;
+            case 'sell':
+                this.sellVehicleEggs();
+                break;
+            case 'to_farm':
+                this.sendVehicle('to_farm');
+                break;
+            default:
+                break;
         }
     }
 
