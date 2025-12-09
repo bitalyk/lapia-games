@@ -35,6 +35,8 @@ export class AuthManager {
         this.achievementAutoRefreshTimer = null;
         this.achievementModalRefreshTimer = null;
         this.liveAchievementUpdateInFlight = false;
+        this.coinProgress = null;
+        this.coinProgressPromise = null;
         const origin = (typeof window !== 'undefined' && window.location?.origin)
             ? window.location.origin.replace(/\/$/, '')
             : 'http://localhost:3000';
@@ -95,6 +97,9 @@ export class AuthManager {
         if (this.authConfig.mode === 'telegram') {
             this.setTelegramOverlayState('success');
         }
+
+        this.coinProgress = null;
+        this.coinProgressPromise = null;
         
         // Обновляем UI
         this.updateAuthUI();
@@ -115,6 +120,9 @@ export class AuthManager {
             console.warn('Failed to record daily activity', error);
         });
         this.startAchievementAutoRefresh();
+        this.refreshCoinProgress({ silent: true }).catch((error) => {
+            console.warn('Failed to refresh coin progress', error);
+        });
         
         // Отправляем событие
         window.dispatchEvent(new CustomEvent('platformLogin', {
@@ -132,6 +140,8 @@ export class AuthManager {
         this.revealUI();
         this.stopAchievementAutoRefresh();
         this.stopAchievementModalRefresh();
+        this.coinProgress = null;
+        this.coinProgressPromise = null;
         
         window.dispatchEvent(new CustomEvent('platformLogout'));
     }
@@ -141,17 +151,20 @@ export class AuthManager {
         const authContainer = document.getElementById('auth-container');
         const gameMenu = document.getElementById('game-menu');
         const gameArea = document.getElementById('game-area');
+        const leaderboardDashboard = document.getElementById('leaderboard-dashboard');
 
         if (this.isLoggedIn && this.currentUser) {
             // Показываем игровое меню
             if (authContainer) authContainer.style.display = 'none';
             if (gameMenu) gameMenu.style.display = 'block';
             if (gameArea) gameArea.style.display = 'none';
+            if (leaderboardDashboard) leaderboardDashboard.style.display = 'block';
         } else {
             // Показываем форму авторизации
             if (authContainer) authContainer.style.display = 'block';
             if (gameMenu) gameMenu.style.display = 'none';
             if (gameArea) gameArea.style.display = 'none';
+            if (leaderboardDashboard) leaderboardDashboard.style.display = 'none';
         }
 
         this.syncTelegramBodyClasses();
@@ -291,6 +304,56 @@ export class AuthManager {
         } catch (error) {
             console.warn('Failed to dispatch achievement update', error);
         }
+    }
+
+    dispatchCoinProgressUpdate() {
+        try {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('coinProgressUpdated', {
+                    detail: { progress: this.coinProgress }
+                }));
+            }
+        } catch (error) {
+            console.warn('Failed to dispatch coin progress update', error);
+        }
+    }
+
+    async refreshCoinProgress(options = {}) {
+        if (!this.currentUser?.username) {
+            return null;
+        }
+
+        if (this.coinProgressPromise && !options.force) {
+            return this.coinProgressPromise;
+        }
+
+        const username = this.currentUser.username;
+        const fetchPromise = (async () => {
+            try {
+                const response = await fetch(`${this.API_BASE}/achievements/coin-progress/${encodeURIComponent(username)}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                if (!data?.success) {
+                    throw new Error(data?.error || 'Failed to load coin progress');
+                }
+                this.coinProgress = data.progress;
+                this.dispatchCoinProgressUpdate();
+                return this.coinProgress;
+            } catch (error) {
+                if (!options.silent) {
+                    console.error('Failed to refresh coin progress:', error);
+                    window.toastManager?.show?.('Unable to load lifetime progress', 'error');
+                }
+                throw error;
+            } finally {
+                this.coinProgressPromise = null;
+            }
+        })();
+
+        this.coinProgressPromise = fetchPromise;
+        return fetchPromise;
     }
 
     getTodayStamp() {
@@ -494,6 +557,11 @@ export class AuthManager {
             this.updateAchievementUI();
             this.saveProgress();
             this.dispatchAchievementStatusUpdate();
+            if (!options.skipCoinProgressSync) {
+                this.refreshCoinProgress({ silent: true }).catch((error) => {
+                    console.debug('Coin progress sync skipped:', error?.message || error);
+                });
+            }
             return this.achievementStatus;
         } catch (error) {
             if (!options.silent) {
@@ -636,6 +704,9 @@ export class AuthManager {
             .filter((definition) => definition.type === 'currency' && typeof definition.threshold === 'number')
             .map((definition) => (progress[definition.key] ? definition.threshold : 0));
         const currencyHighScore = Math.max(0, ...currencyValues, ...achievedCurrencyThresholds);
+        const lifetimeCoins = Math.max(0, typeof this.coinProgress?.totalCoins === 'number'
+            ? this.coinProgress.totalCoins
+            : currencyHighScore);
 
         return {
             status,
@@ -647,7 +718,8 @@ export class AuthManager {
             unlockedCount,
             lpaBalance,
             conversionCapacity,
-            currencyHighScore
+            currencyHighScore: lifetimeCoins,
+            coinProgress: this.coinProgress
         };
     }
 
@@ -701,7 +773,11 @@ export class AuthManager {
         }
 
         if (definition.type === 'currency' && definition.threshold) {
-            return `Best run: ${this.formatNumber(snapshot.currencyHighScore)} / ${this.formatNumber(definition.threshold)} coins`;
+            const lifetimeCoins = Math.max(0, snapshot.currencyHighScore || 0);
+            const displayValue = Math.min(lifetimeCoins, definition.threshold);
+            const remaining = Math.max(0, definition.threshold - lifetimeCoins);
+            const remainingLabel = remaining > 0 ? ` · ${this.formatNumber(remaining)} coins to go` : '';
+            return `Lifetime coins: ${this.formatNumber(displayValue)} / ${this.formatNumber(definition.threshold)}${remainingLabel}`;
         }
 
         if (definition.type === 'activity' && definition.streak) {
@@ -738,11 +814,19 @@ export class AuthManager {
         const clampPercent = (value) => Math.max(0, Math.min(100, Math.round(value)));
 
         if (definition.type === 'currency' && definition.threshold) {
-            const current = Math.max(0, Math.min(definition.threshold, snapshot.currencyHighScore || 0));
-            const percent = definition.threshold > 0 ? clampPercent((current / definition.threshold) * 100) : 0;
+            const milestone = snapshot.coinProgress?.milestones?.find((item) => item.key === definition.key);
+            const totalCoins = Math.max(0, snapshot.currencyHighScore || 0);
+            const current = Math.max(0, Math.min(definition.threshold, totalCoins));
+            const computedPercent = definition.threshold > 0 ? clampPercent((current / definition.threshold) * 100) : 0;
+            const percent = typeof milestone?.percentComplete === 'number'
+                ? clampPercent(milestone.percentComplete)
+                : computedPercent;
+            const remainingLabel = milestone && milestone.remaining > 0
+                ? ` · ${this.formatNumber(milestone.remaining)} to go`
+                : '';
             return {
                 percent,
-                label: `${this.formatNumber(current)} / ${this.formatNumber(definition.threshold)} coins`
+                label: `${this.formatNumber(current)} / ${this.formatNumber(definition.threshold)} coins${remainingLabel}`
             };
         }
 
@@ -813,8 +897,19 @@ export class AuthManager {
             `;
         }).join('');
 
+        const lifetimeCoinsValue = this.formatNumber(Math.max(0, snapshot.coinProgress?.totalCoins || snapshot.currencyHighScore || 0));
+        const nextMilestone = snapshot.coinProgress?.nextMilestone;
+        const nextMilestoneCopy = nextMilestone
+            ? `Next at ${this.formatNumber(nextMilestone.threshold)} (${this.formatNumber(nextMilestone.remaining)} left)`
+            : 'All milestones unlocked';
+
         this.achievementModalContent.innerHTML = `
             <div class="achievements-summary">
+                <div class="achievements-summary-card">
+                    <span class="achievements-summary-label">Lifetime Coins</span>
+                    <span class="achievements-summary-value">💰 ${lifetimeCoinsValue}</span>
+                    <span class="achievements-summary-subtitle">${nextMilestoneCopy}</span>
+                </div>
                 <div class="achievements-summary-card">
                     <span class="achievements-summary-label">LPA Balance</span>
                     <span class="achievements-summary-value">💎 ${this.formatNumber(snapshot.lpaBalance)}</span>
@@ -855,7 +950,11 @@ export class AuthManager {
         window.addEventListener('keydown', this.onAchievementKeyDown);
 
         this.renderAchievementModal();
-        await this.runLiveAchievementUpdate();
+        const coinProgressPromise = this.refreshCoinProgress({ silent: true }).catch(() => null);
+        await Promise.all([
+            this.runLiveAchievementUpdate().catch(() => null),
+            coinProgressPromise
+        ]);
         if (!this.achievementStatus && window.showToast) {
             window.showToast('Unable to load achievements right now.', 'error');
         }

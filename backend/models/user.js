@@ -195,6 +195,38 @@ const fishesUpgradeSchema = new mongoose.Schema({
   noAquariumLimit: { type: Boolean, default: false }
 }, { _id: false });
 
+const earningsTotalsSchema = new mongoose.Schema({
+  happyBirds: { type: Number, default: 0 },
+  richGarden: { type: Number, default: 0 },
+  goldenMine: { type: Number, default: 0 },
+  catChess: { type: Number, default: 0 },
+  fishes: { type: Number, default: 0 }
+}, { _id: false });
+
+const earningsTrackerSchema = new mongoose.Schema({
+  totalsByGame: {
+    type: earningsTotalsSchema,
+    default: () => ({})
+  },
+  totalAllCoins: { type: Number, default: 0 },
+  totalLpaEarned: { type: Number, default: 0 },
+  lastUpdated: { type: Date, default: Date.now }
+}, { _id: false });
+
+const earningTransactionSchema = new mongoose.Schema({
+  id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  game: {
+    type: String,
+    enum: ['happy-birds', 'rich-garden', 'golden-mine', 'cat-chess', 'fishes', 'global'],
+    required: true
+  },
+  type: { type: String, required: true },
+  amount: { type: Number, required: true, min: 0 },
+  currency: { type: String, enum: ['game_coin', 'lpa'], required: true },
+  details: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+  createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const telegramProfileSchema = new mongoose.Schema({
   id: { type: String },
   username: { type: String },
@@ -351,6 +383,16 @@ const userSchema = new mongoose.Schema({
     default: () => ({}) 
   },
 
+  earningsTracker: {
+    type: earningsTrackerSchema,
+    default: () => ({})
+  },
+
+  earningsTransactions: {
+    type: [earningTransactionSchema],
+    default: () => []
+  },
+
   lpaBalance: { type: Number, default: 0 },
   totalGameCurrency: { type: Number, default: 0 },
   currencyByGame: {
@@ -502,6 +544,13 @@ userSchema.index({ 'lastActive': -1 }); // Для активных пользо�
 userSchema.index({ 'gamesProgress.lastPlayed': -1 }); // Для сортировки по играм
 userSchema.index({ 'telegramProfile.id': 1 }, { sparse: true });
 userSchema.index({ invitedBy: 1 });
+userSchema.index({ 'earningsTracker.totalAllCoins': -1 });
+userSchema.index({ 'earningsTracker.totalLpaEarned': -1 });
+userSchema.index({ 'earningsTracker.totalsByGame.happyBirds': -1 });
+userSchema.index({ 'earningsTracker.totalsByGame.richGarden': -1 });
+userSchema.index({ 'earningsTracker.totalsByGame.goldenMine': -1 });
+userSchema.index({ 'earningsTracker.totalsByGame.catChess': -1 });
+userSchema.index({ 'earningsTracker.totalsByGame.fishes': -1 });
 
 // Методы для платформы
 userSchema.methods.updatePlatformStats = function(updates) {

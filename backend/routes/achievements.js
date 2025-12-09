@@ -30,6 +30,25 @@ router.get("/status/:username", async (req, res) => {
   }
 });
 
+router.get("/coin-progress/:username", async (req, res) => {
+  try {
+    const user = await findUser(req.params.username);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const progress = AchievementManager.getCoinProgress(user);
+    if (user.isModified()) {
+      await user.save();
+    }
+
+    return res.json({ success: true, progress });
+  } catch (error) {
+    console.error("Achievement coin progress error:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 router.post("/record-activity", async (req, res) => {
   try {
     const { username, activityDate } = req.body || {};

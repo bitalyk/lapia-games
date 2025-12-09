@@ -2,6 +2,7 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import User from "../models/user.js";
+import EarningsTracker from "../services/earnings-tracker.js";
 
 const router = express.Router();
 
@@ -638,14 +639,33 @@ router.post('/sell', async (req, res) => {
       user.markModified('catChessProgress.sellBonuses');
     }
 
+    const trackerResult = EarningsTracker.recordTransaction(user, {
+      game: 'cat-chess',
+      type: 'sell',
+      amount: finalSellPrice,
+      currency: 'game_coin',
+      details: {
+        cellIndex: index,
+        level: normalizedCat.level,
+        bonusMultiplier
+      }
+    });
+
     user.markModified('catChessProgress.board');
     user.markModified('catChessProgress.coins');
     await user.save();
-    res.json(buildProgressPayload(progress, {
+    const payload = buildProgressPayload(progress, {
       includeSuccess: true,
       growthTimeSec: upgradeState.growthTimeSec,
       upgrades: upgradeState.upgrades
-    }));
+    });
+
+    if (trackerResult) {
+      payload.earningsTracker = trackerResult.earnings;
+      payload.unlockedAchievements = trackerResult.unlockedAchievements;
+    }
+
+    res.json(payload);
   } catch (error) {
     console.error('Cat Chess sell error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -715,10 +735,24 @@ router.post('/sell_all', async (req, res) => {
       }
     });
 
+    let trackerResult = null;
     if (soldCount > 0) {
       progress.coins += totalCoinsEarned;
       user.markModified('catChessProgress.coins');
       user.markModified('catChessProgress.board');
+
+      trackerResult = EarningsTracker.recordTransaction(user, {
+        game: 'cat-chess',
+        type: 'sell_all',
+        amount: totalCoinsEarned,
+        currency: 'game_coin',
+        details: {
+          soldCount,
+          soldIndices,
+          notReadyCount,
+          ineligibleCount
+        }
+      });
     }
 
     if (sellBonusesChanged) {
@@ -728,18 +762,27 @@ router.post('/sell_all', async (req, res) => {
     if (soldCount > 0 || sellBonusesChanged) {
       await user.save();
     }
-    res.json({
-      ...buildProgressPayload(progress, {
-        includeSuccess: true,
-        growthTimeSec: upgradeState.growthTimeSec,
-        upgrades: upgradeState.upgrades
-      }),
+    const basePayload = buildProgressPayload(progress, {
+      includeSuccess: true,
+      growthTimeSec: upgradeState.growthTimeSec,
+      upgrades: upgradeState.upgrades
+    });
+
+    const response = {
+      ...basePayload,
       soldCount,
       soldIndices,
       coinsEarned: totalCoinsEarned,
       notReadyCount,
       ineligibleCount
-    });
+    };
+
+    if (trackerResult) {
+      response.earningsTracker = trackerResult.earnings;
+      response.unlockedAchievements = trackerResult.unlockedAchievements;
+    }
+
+    res.json(response);
   } catch (error) {
     console.error('Cat Chess sell all error:', error);
     res.status(500).json({ error: 'Internal server error' });

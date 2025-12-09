@@ -19,6 +19,7 @@ import fishesRoutes from "./routes/fishes.js";
 import achievementsRoutes from "./routes/achievements.js";
 import promoCodeRoutes from "./routes/promo-codes.js";
 import friendsRoutes from "./routes/friends.js";
+import leaderboardRoutes from "./routes/leaderboards.js";
 import authConfig, { getPublicAuthConfig } from "./config/auth-config.js";
 import requireAuth from "./middleware/require-auth.js";
 
@@ -212,6 +213,10 @@ console.log('🎁 Promo API available at /api/promo');
 // Friends & invitations
 app.use("/api/friends", requireAuth, friendsRoutes);
 console.log('🤝 Friends API available at /api/friends');
+
+// Leaderboards
+app.use("/api/leaderboards", requireAuth, leaderboardRoutes);
+console.log('🏆 Leaderboards API available at /api/leaderboards');
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

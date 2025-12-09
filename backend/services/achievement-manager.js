@@ -1,3 +1,5 @@
+import EarningsTracker from "./earnings-tracker.js";
+
 const GAME_KEY_MAP = {
   'happy-birds': 'happyBirds',
   'rich-garden': 'richGarden',
@@ -153,8 +155,19 @@ class AchievementManager {
 
     user.achievementProgress[key] = true;
 
+    let rewardTrackerResult = null;
     if (typeof definition.reward === 'number' && definition.reward > 0) {
       user.lpaBalance = clampNumber(user.lpaBalance) + definition.reward;
+      rewardTrackerResult = EarningsTracker.recordTransaction(user, {
+        game: 'global',
+        type: `achievement:${key}`,
+        amount: definition.reward,
+        currency: 'lpa',
+        details: {
+          achievementKey: definition.key,
+          name: definition.name
+        }
+      });
     }
 
     const unlockedAt = new Date();
@@ -173,7 +186,7 @@ class AchievementManager {
       user.achievementHistory.splice(0, user.achievementHistory.length - 100);
     }
 
-    return {
+    const unlocked = {
       key,
       name: definition.name,
       reward: definition.reward || 0,
@@ -181,6 +194,12 @@ class AchievementManager {
       lpaBalance: user.lpaBalance,
       type: definition.type || 'general'
     };
+
+    if (rewardTrackerResult) {
+      unlocked.earningsTracker = rewardTrackerResult.earnings;
+    }
+
+    return unlocked;
   }
 
   static getGameAccessors(user) {
@@ -259,28 +278,99 @@ class AchievementManager {
   }
 
   static evaluateCurrencyAchievements(user) {
+    const { unlockedAchievements } = this.checkCoinAchievements(user);
+    return unlockedAchievements;
+  }
+
+  static getLifetimeCoinTotal(user) {
+    if (!user || !user.earningsTracker) {
+      return 0;
+    }
+    return clampNumber(user.earningsTracker.totalAllCoins);
+  }
+
+  static getCoinProgress(user) {
+    if (!user) {
+      return null;
+    }
+
     this.prepareUser(user);
     this.ensureWelcomeAchievement(user);
 
-    const maxCurrency = Math.max(
-      ...GAME_IDS.map((gameId) => {
-        const key = GAME_KEY_MAP[gameId];
-        return clampNumber(user.currencyByGame[key]);
-      }),
-      0
+    const totalsByGame = {};
+    GAME_IDS.forEach((gameId) => {
+      const trackerKey = GAME_KEY_MAP[gameId];
+      const trackerTotals = user?.earningsTracker?.totalsByGame || {};
+      const rawValue = trackerTotals[trackerKey];
+      totalsByGame[trackerKey] = clampNumber(rawValue);
+    });
+
+    const totalCoins = this.getLifetimeCoinTotal(user);
+    const totalLpa = clampNumber(user?.earningsTracker?.totalLpaEarned);
+    const lastUpdated = user?.earningsTracker?.lastUpdated || new Date();
+
+    const milestones = CURRENCY_ACHIEVEMENTS.map((achievement) => {
+      const threshold = clampNumber(achievement.threshold);
+      const unlocked = Boolean(user.achievementProgress?.[achievement.key]);
+      const remaining = Math.max(0, threshold - totalCoins);
+      const percentComplete = threshold > 0
+        ? Math.max(0, Math.min(100, Math.round((totalCoins / threshold) * 100)))
+        : 100;
+
+      return {
+        key: achievement.key,
+        name: achievement.name,
+        threshold,
+        unlocked,
+        percentComplete,
+        remaining
+      };
+    });
+
+    const nextMilestone = milestones.find((milestone) => !milestone.unlocked) || null;
+
+    return {
+      username: user.username,
+      totalCoins,
+      totalLpa,
+      totalsByGame,
+      milestones,
+      nextMilestone: nextMilestone
+        ? {
+          key: nextMilestone.key,
+          threshold: nextMilestone.threshold,
+          remaining: nextMilestone.remaining
+        }
+        : null,
+      lastUpdated
+    };
+  }
+
+  static checkCoinAchievements(user, options = {}) {
+    this.prepareUser(user);
+    this.ensureWelcomeAchievement(user);
+
+    const providedTotal = (typeof options.totalCoins === 'number' && Number.isFinite(options.totalCoins))
+      ? options.totalCoins
+      : null;
+    const totalCoins = clampNumber(
+      providedTotal !== null ? providedTotal : this.getLifetimeCoinTotal(user)
     );
 
     const unlocked = [];
     CURRENCY_ACHIEVEMENTS.forEach((achievement) => {
-      if (!user.achievementProgress[achievement.key] && maxCurrency >= achievement.threshold) {
-        const unlockedAchievement = this.unlockAchievement(user, achievement.key, { maxCurrency });
+      if (!user.achievementProgress[achievement.key] && totalCoins >= achievement.threshold) {
+        const unlockedAchievement = this.unlockAchievement(user, achievement.key, { totalCoins });
         if (unlockedAchievement) {
           unlocked.push(unlockedAchievement);
         }
       }
     });
 
-    return unlocked;
+    return {
+      totalCoins,
+      unlockedAchievements: unlocked
+    };
   }
 
   static recordActivity(user, activityDate = new Date()) {
@@ -425,13 +515,29 @@ class AchievementManager {
 
     const syncResult = this.syncAllCurrency(user);
 
+    let trackerResult = null;
+    if (conversions > 0) {
+      trackerResult = EarningsTracker.recordTransaction(user, {
+        game: 'global',
+        type: 'convert',
+        amount: conversions,
+        currency: 'lpa',
+        details: {
+          conversions,
+          perGameCost: CONVERSION_COST_PER_GAME,
+          games: GAME_IDS
+        }
+      });
+    }
+
     return {
       converted: conversions,
       lpaBalance: user.lpaBalance,
       currencyByGame: syncResult.currencyByGame,
       totalGameCurrency: syncResult.totalGameCurrency,
       conversionCapacity: this.getConversionCapacity(user),
-      unlockedAchievements: syncResult.unlockedAchievements
+      unlockedAchievements: syncResult.unlockedAchievements,
+      earningsTracker: trackerResult ? trackerResult.earnings : undefined
     };
   }
 

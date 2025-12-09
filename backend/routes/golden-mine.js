@@ -1,5 +1,6 @@
 import express from 'express';
 import User from '../models/user.js';
+import EarningsTracker from '../services/earnings-tracker.js';
 
 const router = express.Router();
 
@@ -534,12 +535,28 @@ router.post('/sell_ore', async (req, res) => {
 
         let totalCoins = 0;
         const cargoObj = user.goldenMineProgress.truckCargo.toObject ? user.goldenMineProgress.truckCargo.toObject() : user.goldenMineProgress.truckCargo;
+        const saleDetails = [];
         for (const [oreType, amount] of Object.entries(cargoObj)) {
-            if (parseInt(amount) > 0) {
-                const orePerCoin = MINE_TYPES[oreType].orePerCoin;
-                const coins = Math.floor(parseInt(amount) / orePerCoin);
-                totalCoins += coins;
+            const numericAmount = parseInt(amount, 10) || 0;
+            if (numericAmount <= 0) {
+                continue;
             }
+            const oreConfig = MINE_TYPES[oreType];
+            if (!oreConfig) {
+                continue;
+            }
+            const orePerCoin = oreConfig.orePerCoin;
+            const coins = Math.floor(numericAmount / orePerCoin);
+            if (coins <= 0) {
+                continue;
+            }
+            totalCoins += coins;
+            saleDetails.push({
+                type: oreType,
+                ore: numericAmount,
+                coins,
+                orePerCoin
+            });
         }
 
         // Add coins and clear cargo
@@ -547,12 +564,28 @@ router.post('/sell_ore', async (req, res) => {
         user.goldenMineProgress.totalCoinsEarned += totalCoins;
         user.goldenMineProgress.truckCargo = {};
 
+        let trackerResult = null;
+        if (totalCoins > 0) {
+            trackerResult = EarningsTracker.recordTransaction(user, {
+                game: 'golden-mine',
+                type: 'sell',
+                amount: totalCoins,
+                currency: 'game_coin',
+                details: {
+                    source: 'ore-truck',
+                    sales: saleDetails
+                }
+            });
+        }
+
         await user.save();
 
         res.json({
             success: true,
             coinsEarned: totalCoins,
-            newCoins: user.goldenMineProgress.coins
+            newCoins: user.goldenMineProgress.coins,
+            earningsTracker: trackerResult?.earnings,
+            unlockedAchievements: trackerResult?.unlockedAchievements
         });
 
     } catch (error) {

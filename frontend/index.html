@@ -57,6 +57,11 @@
     <!-- Загружается динамически -->
   </section>
 
+  <!-- Лидерборды -->
+  <section id="leaderboard-dashboard" class="leaderboard-dashboard" hidden>
+    <div class="leaderboard-empty-state">Loading leaderboards…</div>
+  </section>
+
   <!-- Игровая область -->
   <div id="game-area" style="display:none;"></div>
 
@@ -71,12 +76,15 @@
   import { AuthManager } from './auth/auth-manager.js';
   import { ShopUI } from './shop/shop-ui.js';
   import { FriendCenter } from './js/friends/friend-center.js';
+  import { LeaderboardDashboard } from './js/leaderboard-dashboard.js';
     
   // Инициализируем системы
   window.authManager = new AuthManager();
   window.shopUI = new ShopUI();
   window.friendCenter = new FriendCenter({ authManager: window.authManager });
   window.friendCenter.init();
+  window.leaderboardDashboard = new LeaderboardDashboard({ authManager: window.authManager });
+  window.leaderboardDashboard.init();
     
   console.log('✅ All systems initialized');
 </script>

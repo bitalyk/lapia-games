@@ -1123,6 +1123,12 @@ body.telegram-auth-mode .telegram-auth-overlay {
   font-weight: 600;
 }
 
+.achievements-summary-subtitle {
+  color: rgba(248, 250, 252, 0.75);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .achievements-section h3 {
   margin-bottom: 12px;
   font-size: 20px;
@@ -1276,6 +1282,357 @@ body.telegram-auth-mode .telegram-auth-overlay {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #cbd5f5;
+}
+
+/* Leaderboard Dashboard */
+.leaderboard-dashboard {
+  width: 100%;
+  margin: clamp(30px, 5vw, 70px) 0;
+  display: block;
+}
+
+.leaderboard-dashboard[hidden] {
+  display: none !important;
+}
+
+.leaderboard-empty-state {
+  padding: 48px;
+  text-align: center;
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.leaderboard-card {
+  position: relative;
+  display: grid;
+  gap: clamp(18px, 3vw, 28px);
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'head'
+    'tabs'
+    'board'
+    'panel';
+  padding: clamp(22px, 4vw, 40px);
+  border-radius: 34px;
+  background: linear-gradient(160deg, rgba(6, 12, 28, 0.95), rgba(7, 14, 32, 0.92));
+  border: 1px solid rgba(123, 245, 212, 0.15);
+  box-shadow: 0 25px 70px rgba(2, 8, 20, 0.55);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.leaderboard-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -10% -35% auto;
+  width: 320px;
+  height: 320px;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(80, 194, 255, 0.25), transparent 65%);
+  opacity: 0.6;
+}
+
+.leaderboard-head {
+  grid-area: head;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.leaderboard-head h2 {
+  font-family: var(--heading-font);
+  margin: 6px 0 0;
+  font-size: clamp(1.4rem, 3vw, 2.1rem);
+}
+
+.leaderboard-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.35em;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
+.leaderboard-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+button.ghost {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: transparent;
+  color: #f5f7ff;
+  font-weight: 600;
+  padding: 10px 18px;
+  min-height: 40px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+button.ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.leaderboard-tabs {
+  grid-area: tabs;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.leaderboard-tabs button {
+  flex: 1;
+  min-width: 140px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: border-color 0.25s ease, background 0.25s ease, color 0.25s ease;
+}
+
+.leaderboard-tabs button.active {
+  border-color: rgba(123, 245, 212, 0.5);
+  background: radial-gradient(circle, rgba(123, 245, 212, 0.18), transparent 65%);
+  color: #f7f9ff;
+}
+
+.leaderboard-tabs button:not(.active):hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.leaderboard-content {
+  grid-area: board;
+  background: rgba(4, 8, 24, 0.85);
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: clamp(14px, 2.5vw, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) minmax(120px, 0.6fr);
+  gap: 16px;
+  align-items: center;
+  padding: 12px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.leaderboard-row:last-of-type {
+  border-bottom: none;
+}
+
+.leaderboard-row .rank {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.leaderboard-row .player {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.leaderboard-row .username {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.leaderboard-row .name {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
+
+.leaderboard-row .value {
+  text-align: right;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--accent);
+}
+
+.leaderboard-row.current {
+  background: linear-gradient(90deg, rgba(123, 245, 212, 0.08), transparent);
+  border-radius: 14px;
+  padding-inline: 12px;
+}
+
+.leaderboard-footnote {
+  margin: 14px 6px 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.leaderboard-state {
+  padding: 36px 20px;
+  text-align: center;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.leaderboard-skeleton {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.06));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.leaderboard-user-panel {
+  grid-area: panel;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  padding: clamp(16px, 2.5vw, 26px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.leaderboard-user-placeholder {
+  text-align: center;
+  padding: 32px 18px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.user-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.user-panel-head h3 {
+  margin: 4px 0;
+}
+
+.timestamp {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.user-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+}
+
+.stat-pill {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(4, 8, 24, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-pill strong {
+  font-size: 1.3rem;
+  letter-spacing: 0.01em;
+}
+
+.rank-chip {
+  display: inline-flex;
+  align-self: flex-start;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 245, 212, 0.5);
+  color: rgba(123, 245, 212, 0.9);
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.user-game-breakdown {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.user-game-breakdown h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.stat-line {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.stat-line span:last-child {
+  color: var(--accent);
+}
+
+@media (min-width: 980px) {
+  .leaderboard-card {
+    grid-template-columns: minmax(0, 1.75fr) minmax(260px, 0.95fr);
+    grid-template-areas:
+      'head head'
+      'tabs tabs'
+      'board panel';
+    align-items: start;
+  }
+
+  .leaderboard-user-panel {
+    min-height: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .leaderboard-tabs button {
+    flex: 1 0 calc(50% - 8px);
+    min-width: 0;
+  }
+
+  .leaderboard-row {
+    grid-template-columns: 42px minmax(0, 1fr) 100px;
+    gap: 10px;
+  }
+
+  .leaderboard-row .value {
+    font-size: 1rem;
+  }
+
+  .user-panel-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .user-stat-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 600px) {

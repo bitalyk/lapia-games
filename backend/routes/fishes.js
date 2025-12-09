@@ -1,6 +1,7 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
 import User from '../models/user.js';
+import EarningsTracker from '../services/earnings-tracker.js';
 
 const router = express.Router();
 
@@ -944,10 +945,22 @@ router.post('/sell', async (req, res) => {
 		progress.coins += sellValue;
 		progress.fishes.splice(index, 1);
 
+		const trackerResult = EarningsTracker.recordTransaction(user, {
+			game: 'fishes',
+			type: 'sell',
+			amount: sellValue,
+			currency: 'game_coin',
+			details: {
+				fishType: config.key,
+				level: fish.level,
+				foodConsumed: fish.foodConsumed
+			}
+		});
+
 		user.markModified('fishesProgress');
 		await user.save();
 
-		return res.json(buildStatusPayload(progress, {
+		const payload = buildStatusPayload(progress, {
 			now,
 			upgradeState,
 			extra: {
@@ -957,7 +970,14 @@ router.post('/sell', async (req, res) => {
 				},
 				message: `${config.name} sold for ${sellValue.toLocaleString()} coins.`
 			}
-		}));
+		});
+
+		if (trackerResult) {
+			payload.earningsTracker = trackerResult.earnings;
+			payload.unlockedAchievements = trackerResult.unlockedAchievements;
+		}
+
+		return res.json(payload);
 	} catch (error) {
 		console.error('Fishes sell error:', error);
 		return res.status(500).json({ error: 'Server error' });

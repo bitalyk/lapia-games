@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import PromoCodeError from './promo-code-error.js';
+import EarningsTracker from './earnings-tracker.js';
 
 const FAST_MODE = process.env.FAST_MODE === 'true';
 const HAPPY_BIRD_TYPES = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
@@ -735,9 +736,22 @@ export default class PromoGameExecutor {
           throw new PromoCodeError('Amount must be greater than zero');
         }
         user.lpaBalance = (user.lpaBalance || 0) + amount;
+        const trackerResult = EarningsTracker.recordTransaction(user, {
+          game: 'global',
+          type: 'promo_reward',
+          amount,
+          currency: 'lpa',
+          details: {
+            promoId: promo?.id || promo?._id || promo?.name || null,
+            action: promo.action
+          }
+        });
         return {
           message: `+${amount} LPA added to your account!`,
-          payload: { lpaBalance: user.lpaBalance }
+          payload: {
+            lpaBalance: user.lpaBalance,
+            earningsTracker: trackerResult?.earnings
+          }
         };
       }
       case 'addCoinsAllGames': {

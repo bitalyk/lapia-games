@@ -1,5 +1,6 @@
 import express from "express";
 import User from "../models/user.js";
+import EarningsTracker from "../services/earnings-tracker.js";
 
 const router = express.Router();
 
@@ -296,6 +297,7 @@ router.post("/sell_truck_eggs", async (req, res) => {
     }
 
     let totalCoins = 0;
+    const soldBreakdown = {};
     const inventorySource = (user.truckInventory && typeof user.truckInventory.toObject === 'function')
       ? user.truckInventory.toObject()
       : (user.truckInventory || {});
@@ -310,12 +312,40 @@ router.post("/sell_truck_eggs", async (req, res) => {
       const coins = Math.floor(amount / config.eggsPerCoin);
       totalCoins += coins;
       user.truckInventory[color] = 0;
+      soldBreakdown[color] = {
+        eggs: amount,
+        coins
+      };
     }
 
     user.coins += totalCoins;
+    let earningsSummary = null;
+    let unlockedAchievements = [];
+    if (totalCoins > 0) {
+      const trackerResult = EarningsTracker.recordTransaction(user, {
+        game: 'happy-birds',
+        type: 'sell',
+        amount: totalCoins,
+        currency: 'game_coin',
+        details: {
+          source: 'truck',
+          soldBreakdown
+        }
+      });
+      earningsSummary = trackerResult.earnings;
+      unlockedAchievements = trackerResult.unlockedAchievements || [];
+    }
+
     await user.save();
 
-    res.json({ success: true, coins: user.coins, truckInventory: user.truckInventory, soldFor: totalCoins });
+    res.json({
+      success: true,
+      coins: user.coins,
+      truckInventory: user.truckInventory,
+      soldFor: totalCoins,
+      earningsTracker: earningsSummary,
+      unlockedAchievements
+    });
   } catch (err) {
     console.error("Sell truck eggs error:", err);
     res.status(500).json({ error: "Server error" });

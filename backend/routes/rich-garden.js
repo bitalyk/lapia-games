@@ -1,5 +1,6 @@
 import express from 'express';
 import User from '../models/user.js';
+import EarningsTracker from '../services/earnings-tracker.js';
 
 const router = express.Router();
 
@@ -699,6 +700,7 @@ router.post('/sell_fruits', async (req, res) => {
         let totalEarned = 0;
         const sold = {};
         const sales = [];
+        const saleDetails = [];
         for (const [type, amountRaw] of Object.entries(truckInventorySource)) {
             const amount = Number(amountRaw) || 0;
             if (amount <= 0) {
@@ -717,6 +719,12 @@ router.post('/sell_fruits', async (req, res) => {
 
             totalEarned += coins;
             sales.push({ type, amount });
+            saleDetails.push({
+                type,
+                fruits: amount,
+                coins,
+                fruitsPerCoin: treeType.fruitsPerCoin
+            });
         }
 
         if (totalEarned === 0) {
@@ -730,6 +738,20 @@ router.post('/sell_fruits', async (req, res) => {
 
         rgData.coins += totalEarned;
 
+        let trackerResult = null;
+        if (totalEarned > 0) {
+            trackerResult = EarningsTracker.recordTransaction(user, {
+                game: 'rich-garden',
+                type: 'sell',
+                amount: totalEarned,
+                currency: 'game_coin',
+                details: {
+                    source: 'fruits',
+                    sales: saleDetails
+                }
+            });
+        }
+
         user.markModified('richGardenProgress');
         await user.save();
 
@@ -740,6 +762,11 @@ router.post('/sell_fruits', async (req, res) => {
 
         if (Object.keys(syncResult.collected).length > 0) {
             extras.collected = syncResult.collected;
+        }
+
+        if (trackerResult) {
+            extras.earningsTracker = trackerResult.earnings;
+            extras.unlockedAchievements = trackerResult.unlockedAchievements;
         }
 
         return res.json(buildUserGardenResponse(user, { now, extras }));
