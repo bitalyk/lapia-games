@@ -47,7 +47,7 @@ async function saveProgress() {
   try {
     const SIX_HOURS_SEC = process.env.FAST_MODE === 'true' ? 30 : 6 * 60 * 60; // Use same logic as routes
     const PRODUCTION_TIME = process.env.FAST_MODE === 'true' ? 30 : 4 * 60 * 60; // Rich Garden
-    const COLLECTION_TIME = process.env.FAST_MODE === 'true' ? 15 : 30 * 60; // Rich Garden
+    const COLLECTION_TIME = 0; // Rich Garden collection now instant
     const TRUCK_TRAVEL_TIME = process.env.FAST_MODE === 'true' ? 10 : 60 * 60; // 1 hour
     const GM_PRODUCTION_TIME = process.env.FAST_MODE === 'true' ? 30 : 8 * 60 * 60; // Golden Mine
     const GM_REST_TIME = process.env.FAST_MODE === 'true' ? 15 : 4 * 60 * 60; // Golden Mine

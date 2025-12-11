@@ -11,6 +11,8 @@
   --shop-text: #e2e8f0;
   --shop-muted: #9ca3af;
   --shop-success: #4ade80;
+  --shop-info: #38bdf8;
+  --shop-danger: #f87171;
 }
 
 body.modal-open {
@@ -226,6 +228,92 @@ body.modal-open {
   min-height: 220px;
 }
 
+.rich-garden-context {
+  border: 1px solid var(--shop-border);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  display: grid;
+  gap: 12px;
+}
+
+.garden-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.garden-stats div {
+  flex: 1;
+  min-width: 140px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.garden-stats span {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  color: var(--shop-muted);
+}
+
+.garden-stats strong {
+  font-size: 1.2rem;
+}
+
+.garden-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.garden-tier {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.garden-tier[data-state="open"] {
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.garden-tier[data-state="blocked"] {
+  border-color: rgba(248, 113, 113, 0.35);
+  opacity: 0.85;
+}
+
+.garden-tier__label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 600;
+}
+
+.garden-tier__label small {
+  color: var(--shop-muted);
+}
+
+.garden-tier__meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--shop-muted);
+}
+
+.garden-tier__status {
+  font-weight: 600;
+  color: var(--shop-info);
+}
+
+.garden-tier[data-state="blocked"] .garden-tier__status {
+  color: var(--shop-danger);
+}
+
 .game-shop-header {
   display: flex;
   align-items: center;
@@ -269,6 +357,10 @@ body.modal-open {
   overflow: hidden;
 }
 
+.shop-item-card[data-state="blocked"] {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
 .shop-item-card[data-state="sold-out"]::after {
   content: 'Owned';
   position: absolute;
@@ -310,6 +402,41 @@ body.modal-open {
   margin: 0;
   color: var(--shop-muted);
   font-size: 0.9rem;
+}
+
+.planting-hint {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.planting-hint strong {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.planting-hint p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--shop-muted);
+}
+
+.planting-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 6px;
+  background: var(--shop-success);
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.6);
+}
+
+.planting-hint[data-state="blocked"] .planting-dot {
+  background: var(--shop-danger);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.4);
 }
 
 .item-meta {

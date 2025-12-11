@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import AchievementManager from "./achievement-manager.js";
+import { FarmPlanner } from "./rich-garden-inventory.js";
 
 const GAME_SHOP_METADATA = {
   "happy-birds": { label: "Happy Birds", icon: "🐦" },
@@ -85,6 +86,15 @@ class BaseShopController {
     };
   }
 
+  describeSection(user) {
+    return {
+      game: this.gameId,
+      label: this.metadata.label,
+      icon: this.metadata.icon,
+      items: this.getItems().map((item) => this.describeItem(user, item))
+    };
+  }
+
   validate(user, item, context = {}) {
     if (this.hasReachedLimit(user, item)) {
       return { valid: false, reason: "ALREADY_PURCHASED" };
@@ -118,12 +128,7 @@ function registerController(controller) {
 
 export default class LpaShopManager {
   static getCatalog(user) {
-    return SHOP_CONTROLLERS.map((controller) => ({
-      game: controller.gameId,
-      label: controller.metadata.label,
-      icon: controller.metadata.icon,
-      items: controller.getItems().map((item) => controller.describeItem(user, item))
-    }));
+    return SHOP_CONTROLLERS.map((controller) => controller.describeSection(user));
   }
 
   static findItem(itemId) {
@@ -279,17 +284,18 @@ class HappyBirdsShopController extends BaseShopController {
 registerController(new HappyBirdsShopController());
 
 const RICH_GARDEN_TREE_ORDER = [
-  { key: "common", label: "Common Tree", level: 1, lpaCost: 10 },
-  { key: "bronze", label: "Bronze Tree", level: 2, lpaCost: 25 },
-  { key: "silver", label: "Silver Tree", level: 3, lpaCost: 100 },
-  { key: "golden", label: "Golden Tree", level: 4, lpaCost: 250 },
-  { key: "platinum", label: "Platinum Tree", level: 5, lpaCost: 1000 },
-  { key: "diamond", label: "Diamond Tree", level: 6, lpaCost: 5000 }
+  { key: "banana", label: "Banana Tree", level: 1, lpaCost: 10 },
+  { key: "apple", label: "Apple Tree", level: 2, lpaCost: 25 },
+  { key: "orange", label: "Orange Tree", level: 3, lpaCost: 100 },
+  { key: "pomegranate", label: "Pomegranate Tree", level: 4, lpaCost: 250 },
+  { key: "mango", label: "Mango Tree", level: 5, lpaCost: 1000 },
+  { key: "durian", label: "Durian Tree", level: 6, lpaCost: 5000 }
 ];
 
 const RICH_GARDEN_UPGRADES = [
   { key: "helicopterTransport", name: "Helicopter Transport", cost: 10000, description: "Truck travel takes only 5 minutes." },
-  { key: "autoCollect", name: "No Collection Timer", cost: 25000, description: "Fruit teleports to storage instantly." }
+  { key: "autoCollect", name: "No Collection Timer", cost: 25000, description: "Fruit teleports to storage instantly." },
+  { key: "unlimitedCrates", name: "No Limit for Crates and Tree Crate", cost: 100000, description: "Removes every crate capacity limit." }
 ];
 
 class RichGardenShopController extends BaseShopController {
@@ -319,6 +325,17 @@ class RichGardenShopController extends BaseShopController {
       }))
     ];
     super("rich-garden", items);
+  }
+
+  describeSection(user) {
+    const snapshot = this.buildGardenSnapshot(user);
+    return {
+      game: this.gameId,
+      label: this.metadata.label,
+      icon: this.metadata.icon,
+      context: this.serializeGardenContext(snapshot),
+      items: this.getItems().map((item) => this.describeItem(user, item, snapshot))
+    };
   }
 
   ensureProgress(user) {
@@ -358,29 +375,99 @@ class RichGardenShopController extends BaseShopController {
     return flags[item.parameters.upgradeKey] ? 1 : 0;
   }
 
-  getHighestTreeLevel(progress) {
-    const levels = progress.garden
-      .filter((tree) => tree && tree.type)
-      .map((tree) => (
-        RICH_GARDEN_TREE_ORDER.find((tier) => tier.key === tree.type)?.level || 0
-      ));
-    if (levels.length === 0) {
-      return 0;
+  buildGardenSnapshot(user) {
+    const progress = this.ensureProgress(user);
+    const planner = new FarmPlanner({ garden: progress.garden });
+    const composition = RICH_GARDEN_TREE_ORDER.reduce((acc, tier) => {
+      acc[tier.key] = 0;
+      return acc;
+    }, {});
+    planner.garden.forEach((plot) => {
+      if (!plot?.type) {
+        return;
+      }
+      composition[plot.type] = (composition[plot.type] || 0) + 1;
+    });
+    const emptySlots = planner.getEmptySlots();
+    return {
+      progress,
+      planner,
+      composition,
+      emptySlots,
+      totalSlots: planner.size,
+      plantingSummary: planner.getPlantingSummary()
+    };
+  }
+
+  serializeGardenContext(snapshot) {
+    const tiers = RICH_GARDEN_TREE_ORDER.map((tier) => ({
+      key: tier.key,
+      label: tier.label,
+      level: tier.level,
+      count: snapshot.composition[tier.key] || 0,
+      canPlant: snapshot.plantingSummary[tier.key]?.canPlant || false,
+      targets: snapshot.plantingSummary[tier.key]?.targets || []
+    }));
+    return {
+      garden: {
+        totalSlots: snapshot.totalSlots,
+        emptySlots: snapshot.emptySlots.length,
+        filledSlots: snapshot.totalSlots - snapshot.emptySlots.length,
+        composition: tiers.map(({ key, label, level, count }) => ({ key, label, level, count }))
+      },
+      plantingSummary: snapshot.plantingSummary,
+      tiers
+    };
+  }
+
+  buildItemContext(item, snapshot) {
+    const treeType = item.parameters?.treeType;
+    const planting = snapshot.plantingSummary[treeType] || { canPlant: false, targets: [] };
+    return {
+      treeType,
+      level: item.parameters?.level || 0,
+      canPlant: planting.canPlant,
+      targets: planting.targets,
+      garden: {
+        totalSlots: snapshot.totalSlots,
+        emptySlots: snapshot.emptySlots.length,
+        composition: snapshot.composition
+      }
+    };
+  }
+
+  describeItem(user, item, snapshotOverride = null) {
+    const base = super.describeItem(user, item);
+    if (item.action !== "placeTree") {
+      return base;
     }
-    return Math.max(...levels);
+    const snapshot = snapshotOverride || this.buildGardenSnapshot(user);
+    const planting = snapshot.plantingSummary[item.parameters.treeType] || { canPlant: false, targets: [] };
+    base.status.canPlant = planting.canPlant;
+    if (!planting.canPlant && !base.status.disabledReason) {
+      base.status.disabledReason = "Garden already optimized for this tier.";
+    }
+    base.context = this.buildItemContext(item, snapshot);
+    return base;
   }
 
   validateSpecific(user, item) {
     if (item.action !== "placeTree") {
       return { valid: true };
     }
-    const progress = this.ensureProgress(user);
-    const currentHighest = this.getHighestTreeLevel(progress);
-    const desiredLevel = item.parameters.level || 1;
-    if (currentHighest >= desiredLevel) {
-      return { valid: false, reason: "TIER_NOT_IMPROVEMENT" };
+    const snapshot = this.buildGardenSnapshot(user);
+    const planting = snapshot.plantingSummary[item.parameters.treeType] || { canPlant: false };
+    if (!planting.canPlant) {
+      return { valid: false, reason: "NO_PLANTING_SLOT" };
     }
-    return { valid: true };
+    return {
+      valid: true,
+      context: { plantingTargets: planting.targets },
+      metadata: {
+        treeType: item.parameters.treeType,
+        placement: planting.targets?.length ? "upgrade" : "empty-slot"
+      }
+    };
   }
 
   applyPurchase(user, item) {

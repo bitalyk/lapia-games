@@ -26,8 +26,12 @@ const birdCageSchema = new mongoose.Schema({
 }, { _id: false });
 
 // Rich Garden Schemas
+const LEGACY_TREE_TYPES = ['common', 'bronze', 'silver', 'golden', 'platinum', 'diamond'];
+const MODERN_TREE_TYPES = ['banana', 'apple', 'orange', 'pomegranate', 'mango', 'durian'];
+const TREE_TYPE_ENUM = [...new Set([...LEGACY_TREE_TYPES, ...MODERN_TREE_TYPES])];
+
 const treeSchema = new mongoose.Schema({
-  type: { type: String, required: true, enum: ['common', 'bronze', 'silver', 'golden', 'platinum', 'diamond'] },
+  type: { type: String, required: true, enum: TREE_TYPE_ENUM },
   state: { type: String, required: true, enum: ['producing', 'ready', 'collecting'], default: 'producing' },
   timeLeft: { type: Number, required: true, default: 14400 }, // 4 hours in seconds
   plantedAt: { type: Date, default: Date.now },
@@ -41,14 +45,23 @@ const richGardenInventorySchema = new mongoose.Schema({
   silver: { type: Number, default: 0 },
   golden: { type: Number, default: 0 },
   platinum: { type: Number, default: 0 },
-  diamond: { type: Number, default: 0 }
+  diamond: { type: Number, default: 0 },
+  banana: { type: Number, default: 0 },
+  apple: { type: Number, default: 0 },
+  orange: { type: Number, default: 0 },
+  pomegranate: { type: Number, default: 0 },
+  mango: { type: Number, default: 0 },
+  durian: { type: Number, default: 0 }
 }, { _id: false });
 
 const richGardenProgressSchema = new mongoose.Schema({
   coins: { type: Number, default: 1000 },
   garden: { type: [treeSchema], default: () => Array(10).fill(null) },
   inventory: { type: richGardenInventorySchema, default: () => ({}) },
+  farmInventory: { type: richGardenInventorySchema, default: () => ({}) },
   truckInventory: { type: richGardenInventorySchema, default: () => ({}) },
+  transport: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+  crates: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
   truckLocation: { type: String, enum: ['farm', 'traveling_to_city', 'city', 'traveling_to_farm'], default: 'farm' },
   truckDepartureTime: { type: Date, default: null },
   totalTreesPlanted: { type: Number, default: 0 },

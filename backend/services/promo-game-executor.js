@@ -24,7 +24,7 @@ const TREE_TYPES = {
 };
 const RICH_GARDEN_SIZE = 10;
 const RICH_GARDEN_PRODUCTION_TIME = FAST_MODE ? 30 : 4 * 60 * 60;
-const RICH_GARDEN_COLLECTION_TIME = FAST_MODE ? 15 : 30 * 60;
+const RICH_GARDEN_COLLECTION_TIME = 0; // Collection resolves instantly in the new logistics flow
 const RICH_GARDEN_TRUCK_TRAVEL = FAST_MODE ? 10 : 60 * 60;
 
 const MINE_TYPES = {
@@ -130,19 +130,14 @@ function fastForwardRichGarden(progress, seconds) {
       tree.plantedAt = new Date(new Date(tree.plantedAt).getTime() - shiftMs);
     }
     if (tree.collectionStartTime) {
-      tree.collectionStartTime = new Date(new Date(tree.collectionStartTime).getTime() - shiftMs);
+      tree.collectionStartTime = null;
     }
     if (tree.timeLeft && tree.timeLeft > 0) {
       tree.timeLeft = Math.max(0, tree.timeLeft - seconds);
     }
     if (tree.state === 'collecting') {
-      const start = tree.collectionStartTime ? new Date(tree.collectionStartTime).getTime() : now;
-      const elapsed = Math.floor((now - start) / 1000);
-      if (elapsed >= RICH_GARDEN_COLLECTION_TIME) {
-        tree.state = 'ready';
-        tree.collectionStartTime = null;
-        tree.timeLeft = 0;
-      }
+      tree.state = 'ready';
+      tree.timeLeft = 0;
     } else if (tree.state === 'producing') {
       const plantedAt = tree.plantedAt ? new Date(tree.plantedAt).getTime() : now;
       const elapsed = Math.floor((now - plantedAt) / 1000);

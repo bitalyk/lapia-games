@@ -14,7 +14,8 @@ const PURCHASE_ERROR_MESSAGES = {
     ITEM_NOT_FOUND: 'This item is no longer available.',
     INSUFFICIENT_LPA: 'You do not have enough LPA coins for this purchase.',
     ALREADY_PURCHASED: 'You already own this upgrade.',
-    UNAVAILABLE: 'This offer is currently unavailable. Please try again later.'
+    UNAVAILABLE: 'This offer is currently unavailable. Please try again later.',
+    NO_PLANTING_SLOT: 'All planting slots are already filled with equal or higher-tier trees.'
 };
 
 export class ShopUI {
@@ -439,6 +440,7 @@ export class ShopUI {
         const icon = this.escapeHtml(section.icon || '🛒');
         const title = this.escapeHtml(section.label || section.game || 'Game');
         const subtitle = `${items.length || 0} offer${items.length === 1 ? '' : 's'}`;
+        const contextMarkup = this.renderSectionContext(section);
         const itemMarkup = items.length
             ? items.map((item) => this.renderShopItem(item)).join('')
             : '<div class="shop-empty"><p>No offers available for this game.</p></div>';
@@ -452,10 +454,67 @@ export class ShopUI {
                         <p>${this.escapeHtml(subtitle)}</p>
                     </div>
                 </header>
+                ${contextMarkup}
                 <div class="shop-item-grid">
                     ${itemMarkup}
                 </div>
             </section>
+        `;
+    }
+
+    renderSectionContext(section = {}) {
+        if (!section?.context) {
+            return '';
+        }
+        if (section.game === 'rich-garden') {
+            return this.renderRichGardenContext(section.context);
+        }
+        return '';
+    }
+
+    renderRichGardenContext(context = {}) {
+        const garden = context.garden || {};
+        const totalSlots = Math.max(0, garden.totalSlots ?? 0);
+        const filledSlots = Math.max(0, garden.filledSlots ?? 0);
+        const emptySlots = Math.max(0, garden.emptySlots ?? 0);
+        const tiers = Array.isArray(context.tiers) ? context.tiers : [];
+        const tierMarkup = tiers.map((tier) => {
+            const state = tier.canPlant ? 'open' : 'blocked';
+            const planted = Math.max(0, tier.count || 0);
+            const targets = Array.isArray(tier.targets) ? tier.targets.length : 0;
+            const statusLabel = tier.canPlant
+                ? (targets > 0 ? `${targets} upgrade slot${targets === 1 ? '' : 's'} ready` : 'Ready to plant')
+                : 'Maxed';
+            return `
+                <div class="garden-tier" data-state="${state}">
+                    <div class="garden-tier__label">
+                        <span>${this.escapeHtml(tier.label || tier.key)}</span>
+                        <small>Lvl ${this.escapeHtml(String(tier.level || ''))}</small>
+                    </div>
+                    <div class="garden-tier__meta">
+                        <span>${planted} planted</span>
+                        <span class="garden-tier__status">${this.escapeHtml(statusLabel)}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="rich-garden-context">
+                <div class="garden-stats">
+                    <div>
+                        <span>Planted</span>
+                        <strong>${filledSlots} / ${totalSlots}</strong>
+                    </div>
+                    <div>
+                        <span>Empty slots</span>
+                        <strong>${emptySlots}</strong>
+                    </div>
+                </div>
+                <div class="garden-tier-grid">
+                    ${tierMarkup}
+                </div>
+            </div>
         `;
     }
 
@@ -464,6 +523,8 @@ export class ShopUI {
         const maxPurchase = typeof status.maxPurchase === 'number' ? status.maxPurchase : -1;
         const purchased = typeof status.purchased === 'number' ? status.purchased : 0;
         const soldOut = Boolean(status.soldOut);
+        const isTreeItem = item.game === 'rich-garden' && item.action === 'placeTree';
+        const plantingBlocked = isTreeItem && status.canPlant === false;
         const type = (item.type || 'item').toLowerCase();
         const chipLabel = type === 'upgrade' ? 'Upgrade' : 'Bundle';
         const chipClass = type === 'upgrade' ? 'item-chip item-chip--upgrade' : 'item-chip';
@@ -472,22 +533,37 @@ export class ShopUI {
             : purchased > 0
                 ? `${purchased} owned`
                 : 'Unlimited purchases';
-        const buttonDisabled = soldOut || this.purchaseInFlight.has(item.id);
         const isLoading = this.purchaseInFlight.has(item.id);
+        const buttonDisabled = soldOut || plantingBlocked || isLoading;
         const buttonLabel = soldOut
             ? 'Owned'
-            : isLoading
-                ? 'Processing...'
-                : `Buy for ${this.formatNumber(item.lpaCost || 0)} LPA`;
+            : plantingBlocked
+                ? 'Not plantable'
+                : isLoading
+                    ? 'Processing...'
+                    : `Buy for ${this.formatNumber(item.lpaCost || 0)} LPA`;
 
         const description = item.description || 'Instantly applied to your save.';
-        const disabledReason = status.disabledReason ? `<small>${this.escapeHtml(status.disabledReason)}</small>` : '';
+        let disabledReasonText = status.disabledReason || '';
+        if (disabledReasonText === 'limit') {
+            disabledReasonText = 'Limit reached for this upgrade.';
+        }
+        if (soldOut && !disabledReasonText) {
+            disabledReasonText = 'Already owned.';
+        }
+        if (plantingBlocked) {
+            disabledReasonText = 'Garden already full of equal or higher-tier trees.';
+        }
+        const disabledReason = disabledReasonText ? `<small>${this.escapeHtml(disabledReasonText)}</small>` : '';
+        const plantingHint = this.renderPlantingHint(item);
+        const stateAttr = soldOut ? 'sold-out' : plantingBlocked ? 'blocked' : 'available';
 
         return `
-            <article class="shop-item-card" data-state="${soldOut ? 'sold-out' : 'available'}">
+            <article class="shop-item-card" data-state="${stateAttr}">
                 <span class="${chipClass}">${this.escapeHtml(chipLabel)}</span>
                 <h5>${this.escapeHtml(item.name || item.id || 'Mystery item')}</h5>
                 <p>${this.escapeHtml(description)}</p>
+                ${plantingHint}
                 <div class="item-meta">
                     <div><span>Price</span> <strong>${this.formatNumber(item.lpaCost || 0)} LPA</strong></div>
                     <div>${this.escapeHtml(ownedLabel)}</div>
@@ -506,6 +582,44 @@ export class ShopUI {
                     ${this.escapeHtml(buttonLabel)}
                 </button>
             </article>
+        `;
+    }
+
+    renderPlantingHint(item = {}) {
+        if (item.game !== 'rich-garden' || item.action !== 'placeTree') {
+            return '';
+        }
+        const context = item.context || {};
+        const canPlant = context.canPlant !== false;
+        const targets = Array.isArray(context.targets) ? context.targets : [];
+        const emptySlots = Math.max(0, context.garden?.emptySlots ?? 0);
+        let detail = 'Ready to plant';
+        if (canPlant) {
+            if (emptySlots > 0) {
+                detail = `${emptySlots} empty slot${emptySlots === 1 ? '' : 's'} available`;
+            } else if (targets.length > 0) {
+                const preview = targets
+                    .slice(0, 3)
+                    .map((slot) => {
+                        const index = Number(slot);
+                        return Number.isFinite(index) ? `#${index + 1}` : null;
+                    })
+                    .filter(Boolean)
+                    .join(', ');
+                detail = `Upgrade ${targets.length} slot${targets.length === 1 ? '' : 's'}${preview ? ` (${preview})` : ''}`;
+            }
+        } else {
+            detail = 'All planted trees are already equal or higher tier.';
+        }
+        const state = canPlant ? 'ready' : 'blocked';
+        return `
+            <div class="planting-hint" data-state="${state}">
+                <span class="planting-dot"></span>
+                <div>
+                    <strong>${canPlant ? 'Planting ready' : 'No planting slots'}</strong>
+                    <p>${this.escapeHtml(detail)}</p>
+                </div>
+            </div>
         `;
     }
 

@@ -8,6 +8,13 @@ export default class RichGardenGame {
         this.garden = Array(GARDEN_SIZE).fill(null); // Each cell is null or a tree object
         this.inventory = {}; // Fruits by tree type
         this.truckInventory = {}; // Fruits currently loaded on truck
+        this.fruitCrates = {}; // Serialized crate data from backend
+        this.treeCrate = { capacity: 0, queued: {} };
+        this.plantingSummary = {};
+        this.upgrades = {};
+        this.transport = { activeMode: 'truck', truck: null, helicopter: null };
+        this.activeVehicle = 'truck';
+        this.modalElements = null;
         this.gameManager = null;
         this.gameLoopInterval = null;
         this.statusRefreshInterval = null;
@@ -20,12 +27,12 @@ export default class RichGardenGame {
 
         // Tree configuration
         this.TREE_TYPES = {
-            common: { cost: 1000, fps: 1, fruitsPerCoin: 100, level: 1, name: "Common Tree" },
-            bronze: { cost: 2500, fps: 2, fruitsPerCoin: 80, level: 2, name: "Bronze Tree" },
-            silver: { cost: 10000, fps: 5, fruitsPerCoin: 50, level: 3, name: "Silver Tree" },
-            golden: { cost: 25000, fps: 10, fruitsPerCoin: 40, level: 4, name: "Golden Tree" },
-            platinum: { cost: 100000, fps: 20, fruitsPerCoin: 20, level: 5, name: "Platinum Tree" },
-            diamond: { cost: 500000, fps: 50, fruitsPerCoin: 10, level: 6, name: "Diamond Tree" }
+            banana: { cost: 1000, fps: 1, fruitsPerCoin: 100, level: 1, name: "Banana Tree" },
+            apple: { cost: 2500, fps: 2, fruitsPerCoin: 80, level: 2, name: "Apple Tree" },
+            orange: { cost: 10000, fps: 5, fruitsPerCoin: 50, level: 3, name: "Orange Tree" },
+            pomegranate: { cost: 25000, fps: 10, fruitsPerCoin: 40, level: 4, name: "Pomegranate Tree" },
+            mango: { cost: 100000, fps: 20, fruitsPerCoin: 20, level: 5, name: "Mango Tree" },
+            durian: { cost: 500000, fps: 50, fruitsPerCoin: 10, level: 6, name: "Durian Tree" }
         };
 
         // Production constants (will be set by loadConfig)
@@ -38,6 +45,12 @@ export default class RichGardenGame {
             production: this.PRODUCTION_TIME,
             collection: this.COLLECTION_TIME,
             truckTravel: this.TRUCK_TRAVEL_TIME
+        };
+
+        this.handleModalKeydown = (event) => {
+            if (event.key === 'Escape') {
+                this.closeShopModal();
+            }
         };
     }
 
@@ -107,11 +120,71 @@ export default class RichGardenGame {
                         <div id="rg-garden-level" class="stat-value">1</div>
                     </div>
                     <div class="stat-card">
-                        <h3>Truck Status</h3>
+                        <h3>Vehicle Status</h3>
                         <div id="rg-truck-status" class="stat-value">At Farm</div>
                         <div id="rg-truck-timer" class="stat-timer"></div>
                     </div>
                 </div>
+
+                <!-- Transport Panel -->
+                <section class="transport-panel">
+                    <div class="transport-panel__header">
+                        <div>
+                            <p class="panel-kicker">Logistics</p>
+                            <h3>Transportation Fleet</h3>
+                            <p>Monitor vehicles, crate health, and travel timing from a single board.</p>
+                        </div>
+                        <div class="vehicle-toggle" id="rg-vehicle-toggle">
+                            <button type="button" class="vehicle-btn is-active" data-vehicle="truck">Truck</button>
+                            <button type="button" class="vehicle-btn" data-vehicle="helicopter">Helicopter</button>
+                        </div>
+                    </div>
+                    <div class="transport-overview">
+                        <div class="vehicle-card">
+                            <div class="vehicle-card__meta">
+                                <span class="label">Active Vehicle</span>
+                                <h4 id="rg-active-vehicle">Truck</h4>
+                                <p id="rg-vehicle-location" class="vehicle-location">At Farm</p>
+                            </div>
+                            <div class="vehicle-progress">
+                                <div class="vehicle-progress-bar">
+                                    <div id="rg-travel-progress-fill"></div>
+                                </div>
+                                <div id="rg-travel-progress-label" class="vehicle-progress-label">Idle</div>
+                            </div>
+                            <div class="vehicle-stats">
+                                <div>
+                                    <span>Crates Loaded</span>
+                                    <strong id="rg-crate-load-chip">0%</strong>
+                                </div>
+                                <div>
+                                    <span>Tree Crate</span>
+                                    <strong id="rg-tree-crate-chip">0 / 0</strong>
+                                </div>
+                                <div>
+                                    <span>Travel Status</span>
+                                    <strong id="rg-travel-state-chip">Idle</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="transport-grid">
+                        <div class="transport-card">
+                            <div class="transport-card__title">
+                                <h4>Fruit Crate Status</h4>
+                                <span id="rg-crate-note" class="transport-note"></span>
+                            </div>
+                            <div id="rg-crate-status" class="inventory-grid"></div>
+                        </div>
+                        <div class="transport-card">
+                            <div class="transport-card__title">
+                                <h4>Tree Crate Queue</h4>
+                                <span id="rg-tree-note" class="transport-note"></span>
+                            </div>
+                            <div id="rg-tree-crate" class="tree-crate-grid"></div>
+                        </div>
+                    </div>
+                </section>
 
                 <!-- Garden Grid -->
                 <div class="garden-section">
@@ -121,6 +194,38 @@ export default class RichGardenGame {
                     </div>
                 </div>
 
+                <!-- Garden Management -->
+                <section class="garden-management-panel">
+                    <div class="panel-header">
+                        <div>
+                            <p class="panel-kicker">Agronomy</p>
+                            <h3>Garden Management</h3>
+                            <p>Understand composition, planting windows, and overall production cadence.</p>
+                        </div>
+                    </div>
+                    <div class="garden-management-grid">
+                        <div class="gm-card">
+                            <div class="gm-card__header">
+                                <h4>Tree Composition</h4>
+                                <span id="rg-tree-total-chip">0 / 10 plots</span>
+                            </div>
+                            <div id="rg-garden-composition" class="composition-grid"></div>
+                        </div>
+                        <div class="gm-card">
+                            <div class="gm-card__header">
+                                <h4>Planting Availability</h4>
+                            </div>
+                            <div id="rg-planting-availability" class="inventory-grid"></div>
+                        </div>
+                        <div class="gm-card">
+                            <div class="gm-card__header">
+                                <h4>Production Status</h4>
+                            </div>
+                            <div id="rg-production-status" class="production-grid"></div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- Inventory -->
                 <div class="inventory-section">
                     <h3>Farm Inventory</h3>
@@ -129,9 +234,9 @@ export default class RichGardenGame {
                     </div>
                 </div>
 
-                <!-- Truck Cargo -->
+                <!-- Vehicle Cargo -->
                 <div class="inventory-section">
-                    <h3>Truck Cargo</h3>
+                    <h3>Vehicle Cargo</h3>
                     <div id="rg-truck-inventory" class="inventory-grid">
                         <!-- Loaded fruits -->
                     </div>
@@ -140,10 +245,10 @@ export default class RichGardenGame {
                 <!-- Controls -->
                 <div class="game-controls">
                     <button id="rg-collect-all-btn" class="control-btn collect">Collect All Ready</button>
-                    <button id="rg-load-truck-btn" class="control-btn truck">Load Truck</button>
-                    <button id="rg-send-truck-btn" class="control-btn truck">Send Truck to City</button>
+                    <button id="rg-load-truck-btn" class="control-btn truck">Load Vehicle</button>
+                    <button id="rg-send-truck-btn" class="control-btn truck">Send Vehicle to City</button>
                     <button id="rg-sell-fruits-btn" class="control-btn sell">Sell Fruits</button>
-                    <button id="rg-return-truck-btn" class="control-btn truck">Return Truck</button>
+                    <button id="rg-return-truck-btn" class="control-btn truck">Return Vehicle</button>
                 </div>
 
                 <!-- Messages -->
@@ -155,6 +260,13 @@ export default class RichGardenGame {
         this.renderGardenGrid();
         this.renderInventory();
         this.renderTruckInventory();
+        this.renderCrateStatus();
+        this.renderTreeCrate();
+        this.renderPlantingAvailability();
+        this.renderGardenComposition();
+        this.renderProductionStatus();
+        this.updateTransportPanel();
+        this.ensureShopModal();
     }
 
     // Load config from server
@@ -233,6 +345,16 @@ export default class RichGardenGame {
     syncStateFromPayload(data) {
         if (!data) return;
 
+        if (data.upgrades && typeof data.upgrades === 'object') {
+            this.upgrades = { ...data.upgrades };
+        } else {
+            this.upgrades = {};
+        }
+        const helicopterUnlocked = Boolean(this.upgrades.helicopterTransport);
+        if (!helicopterUnlocked && this.activeVehicle === 'helicopter') {
+            this.activeVehicle = 'truck';
+        }
+
         if (typeof data.coins === 'number') {
             this.coins = data.coins;
         }
@@ -241,9 +363,10 @@ export default class RichGardenGame {
             this.garden = this.normalizeGarden(data.garden);
         }
 
-        if (data.inventory) {
+        const farmInventorySource = data.farmInventory || data.inventory;
+        if (farmInventorySource && typeof farmInventorySource === 'object') {
             this.inventory = {};
-            Object.entries(data.inventory).forEach(([type, amount]) => {
+            Object.entries(farmInventorySource).forEach(([type, amount]) => {
                 this.inventory[type] = Number(amount) || 0;
             });
         } else {
@@ -252,6 +375,36 @@ export default class RichGardenGame {
 
         if (data.treeTypes) {
             this.TREE_TYPES = data.treeTypes;
+        }
+
+        if (data.fruitCrates && typeof data.fruitCrates === 'object') {
+            this.fruitCrates = {};
+            Object.entries(data.fruitCrates).forEach(([type, crate]) => {
+                this.fruitCrates[type] = { ...(crate || {}) };
+            });
+        } else {
+            this.fruitCrates = {};
+        }
+
+        if (data.treeCrate && typeof data.treeCrate === 'object') {
+            this.treeCrate = {
+                ...data.treeCrate,
+                queued: { ...(data.treeCrate.queued || {}) }
+            };
+        } else {
+            this.treeCrate = { capacity: 0, queued: {} };
+        }
+
+        if (data.plantingSummary && typeof data.plantingSummary === 'object') {
+            this.plantingSummary = {};
+            Object.entries(data.plantingSummary).forEach(([type, summary]) => {
+                this.plantingSummary[type] = {
+                    canPlant: Boolean(summary?.canPlant),
+                    targets: Array.isArray(summary?.targets) ? [...summary.targets] : []
+                };
+            });
+        } else {
+            this.plantingSummary = {};
         }
 
         if (data.timers) {
@@ -306,6 +459,33 @@ export default class RichGardenGame {
 
         if (!this.truckInventory) {
             this.truckInventory = {};
+        }
+
+        if (data.transport) {
+            this.transport = this.prepareTransportState(data.transport);
+        } else {
+            this.transport = this.prepareTransportState({
+                activeMode: 'truck',
+                truck: {
+                    location: this.truckStatus?.rawLocation || this.truckStatus?.location || this.truckLocation || 'farm',
+                    isTraveling: Boolean(this.truckStatus?.isTraveling),
+                    secondsRemaining: this.truckStatus?.secondsRemaining || 0,
+                    travelSeconds: this.timerConfig.truckTravel,
+                    departureTime: this.truckStatus?.departureTime || null,
+                    fruitCrates: this.fruitCrates,
+                    treeCrate: this.treeCrate,
+                    cargo: this.truckInventory
+                }
+            });
+        }
+
+        const preferredVehicle = this.resolvePreferredVehicleMode();
+        const applied = this.applyVehicleState(preferredVehicle);
+        if (!applied && preferredVehicle === 'helicopter') {
+            this.activeVehicle = 'truck';
+            this.applyVehicleState('truck');
+        } else {
+            this.activeVehicle = preferredVehicle;
         }
 
         if (this.truckStatus) {
@@ -391,15 +571,34 @@ export default class RichGardenGame {
         if (gardenGrid) {
             gardenGrid.addEventListener('click', (e) => {
                 if (e.target.classList.contains('rg-buy-tree-btn')) {
-                    const cellIndex = parseInt(e.target.dataset.cell);
-                    this.buyTree(cellIndex);
+                    const cellIndex = parseInt(e.target.dataset.cell, 10);
+                    this.promptTreePurchase(cellIndex);
                 } else if (e.target.classList.contains('rg-upgrade-tree-btn')) {
-                    const cellIndex = parseInt(e.target.dataset.cell);
-                    this.upgradeTree(cellIndex);
+                    const cellIndex = parseInt(e.target.dataset.cell, 10);
+                    this.promptTreeUpgrade(cellIndex);
                 } else if (e.target.classList.contains('rg-collect-tree-btn')) {
-                    const cellIndex = parseInt(e.target.dataset.cell);
+                    const cellIndex = parseInt(e.target.dataset.cell, 10);
                     this.collectTree(cellIndex);
+                } else if (e.target.classList.contains('rg-plant-from-crate-btn')) {
+                    const cellIndex = parseInt(e.target.dataset.cell, 10);
+                    const treeType = e.target.dataset.type;
+                    this.plantTreeFromCrate(cellIndex, treeType);
                 }
+            });
+        }
+
+        const vehicleToggle = document.getElementById('rg-vehicle-toggle');
+        if (vehicleToggle) {
+            vehicleToggle.addEventListener('click', (event) => {
+                const button = event.target.closest('.vehicle-btn');
+                if (!button) {
+                    return;
+                }
+                const vehicle = button.dataset.vehicle;
+                if (!vehicle) {
+                    return;
+                }
+                this.handleVehicleSelect(vehicle);
             });
         }
     }
@@ -433,14 +632,6 @@ export default class RichGardenGame {
                 if (tree.secondsRemaining === 0) {
                     tree.phase = 'ready';
                 }
-            } else if (tree.phase === 'collecting') {
-                if (tree.secondsRemaining > 0) {
-                    tree.secondsRemaining = Math.max(0, tree.secondsRemaining - 1);
-                }
-                if (tree.secondsRemaining === 0) {
-                    tree.phase = 'producing';
-                    tree.secondsRemaining = this.timerConfig.production;
-                }
             }
         });
 
@@ -453,6 +644,16 @@ export default class RichGardenGame {
                 this.truckLocation = this.truckStatus.location;
                 this.truckDepartureTime = null;
             }
+        }
+
+        const activeVehicleState = this.transport?.[this.activeVehicle];
+        if (activeVehicleState && this.truckStatus) {
+            activeVehicleState.isTraveling = Boolean(this.truckStatus.isTraveling);
+            activeVehicleState.secondsRemaining = this.truckStatus.secondsRemaining || 0;
+            activeVehicleState.location = this.truckStatus.isTraveling
+                ? (this.truckStatus.rawLocation || activeVehicleState.location)
+                : (this.truckStatus.location || activeVehicleState.location);
+            activeVehicleState.departureTime = this.truckStatus.departureTime || null;
         }
     }
 
@@ -491,6 +692,18 @@ export default class RichGardenGame {
                         ${canBuy ? `<button class="rg-buy-tree-btn" data-cell="${i}">Buy Tree</button>` : 'Empty'}
                     </div>
                 `;
+            }
+
+            const plantableTypes = this.getPlantableTypesForCell(i);
+            if (plantableTypes.length > 0) {
+                const plantingButtons = plantableTypes.map(type => {
+                    const label = this.TREE_TYPES[type]?.name || type;
+                    return `<button class="rg-plant-from-crate-btn" data-cell="${i}" data-type="${type}">Plant ${label}</button>`;
+                }).join('');
+                const plantingWrap = document.createElement('div');
+                plantingWrap.className = 'planting-actions';
+                plantingWrap.innerHTML = plantingButtons;
+                cell.appendChild(plantingWrap);
             }
 
             gardenGrid.appendChild(cell);
@@ -561,9 +774,602 @@ export default class RichGardenGame {
         });
 
         if (!hasCargo) {
-            inventoryEl.innerHTML = '<div class="empty-inventory">Truck is empty</div>';
+            inventoryEl.innerHTML = '<div class="empty-inventory">Vehicle is empty</div>';
         }
     }
+
+    renderCrateStatus() {
+        const crateEl = document.getElementById('rg-crate-status');
+        if (!crateEl) return;
+
+        const crateEntries = Object.entries(this.fruitCrates || {});
+        if (crateEntries.length === 0) {
+            crateEl.innerHTML = '<div class="empty-inventory">No crate data available</div>';
+            return;
+        }
+
+        crateEl.innerHTML = '';
+
+        crateEntries.forEach(([type, crateData]) => {
+            const crate = crateData || {};
+            const treeConfig = this.TREE_TYPES[type] || {};
+            const label = crate.label || `${treeConfig.name || type} Crate`;
+            const loaded = Math.max(0, Number(crate.loaded) || 0);
+            const baseCapacity = Math.max(0, Number(crate.capacity) || 0);
+            const multiplier = Math.max(1, Number(crate.multiplier) || 1);
+            const unlimited = Boolean(crate.unlimited);
+            const capacity = unlimited ? Infinity : Math.floor(baseCapacity * multiplier);
+            const percent = capacity === Infinity || capacity === 0
+                ? 0
+                : Math.min(100, Math.round((loaded / capacity) * 100));
+            const card = document.createElement('div');
+            const fullnessClass = unlimited ? 'unlimited' : percent >= 90 ? 'critical' : percent >= 60 ? 'warning' : 'stable';
+            card.className = `fruit-card crate-card ${fullnessClass}`;
+            const capacityLabel = capacity === Infinity ? '∞' : capacity.toLocaleString();
+            const percentLabel = unlimited ? 'Unlimited capacity' : `${percent}% full`;
+            const progressBar = unlimited
+                ? ''
+                : `<div class="rg-capacity-bar"><div class="rg-capacity-fill" style="width: ${percent}%"></div></div>`;
+
+            card.innerHTML = `
+                <h4>${label}</h4>
+                <div class="fruit-stats">
+                    <div>Loaded: ${loaded.toLocaleString()}</div>
+                    <div>Capacity: ${capacityLabel}</div>
+                </div>
+                <div class="crate-note">${percentLabel}</div>
+                ${progressBar}
+            `;
+
+            crateEl.appendChild(card);
+        });
+    }
+
+    renderTreeCrate() {
+        const treeCrateEl = document.getElementById('rg-tree-crate');
+        if (!treeCrateEl) return;
+
+        const queued = this.treeCrate?.queued || {};
+        const totalQueued = Object.values(queued).reduce((sum, countRaw) => sum + (Number(countRaw) || 0), 0);
+        const capacity = Number(this.treeCrate?.capacity) || 0;
+        const unlimited = Boolean(this.treeCrate?.unlimited);
+
+        if (totalQueued === 0) {
+            treeCrateEl.innerHTML = '<div class="empty-inventory">No trees staged in the crate</div>';
+            return;
+        }
+
+        treeCrateEl.innerHTML = '';
+
+        Object.entries(queued).forEach(([type, countRaw]) => {
+            const count = Number(countRaw) || 0;
+            if (count <= 0) {
+                return;
+            }
+            const treeConfig = this.TREE_TYPES[type] || { name: type };
+            const summary = this.plantingSummary?.[type];
+            const targetCount = Array.isArray(summary?.targets) ? summary.targets.length : 0;
+            const canPlant = Boolean(summary?.canPlant && targetCount > 0);
+            const card = document.createElement('div');
+            card.className = `tree-crate-card ${canPlant ? 'plantable' : 'blocked'}`;
+
+            const plantStatus = canPlant ? 'Ready to plant' : 'Waiting for slot';
+
+            card.innerHTML = `
+                <h4>${treeConfig.name}</h4>
+                <div class="tree-crate-count">Queued: ${count}</div>
+                <div class="tree-crate-capacity">Crate: ${unlimited ? 'Unlimited' : `${totalQueued}/${capacity}`}</div>
+                <div class="tree-crate-slot">Slots: ${plantStatus}</div>
+            `;
+
+            treeCrateEl.appendChild(card);
+        });
+    }
+
+    renderPlantingAvailability() {
+        const plantingEl = document.getElementById('rg-planting-availability');
+        if (!plantingEl) return;
+
+        const summary = this.plantingSummary || {};
+        const treeTypes = Object.keys(this.TREE_TYPES || {});
+        if (treeTypes.length === 0) {
+            plantingEl.innerHTML = '<div class="empty-inventory">No tree data available</div>';
+            return;
+        }
+
+        plantingEl.innerHTML = '';
+        treeTypes.forEach((type) => {
+            const treeConfig = this.TREE_TYPES[type];
+            if (!treeConfig) {
+                return;
+            }
+            const info = summary[type] || {};
+            const canPlant = Boolean(info.canPlant);
+            const targets = Array.isArray(info.targets) ? info.targets : [];
+            const previewTargets = targets.slice(0, 3).map(idx => `#${idx + 1}`);
+            const additionalTargets = targets.length > 3 ? ` +${targets.length - 3} more` : '';
+            const targetLabel = targets.length === 0
+                ? 'No planting slots available'
+                : `Targets: ${previewTargets.join(', ')}${additionalTargets}`;
+
+            const card = document.createElement('div');
+            card.className = `planting-card ${canPlant ? 'available' : 'blocked'}`;
+            card.innerHTML = `
+                <h4>${treeConfig.name}</h4>
+                <div class="planting-status">${canPlant ? 'Plantable now' : 'Blocked'}</div>
+                <div class="planting-targets">${targetLabel}</div>
+            `;
+
+            plantingEl.appendChild(card);
+        });
+    }
+
+    renderGardenComposition() {
+        const container = document.getElementById('rg-garden-composition');
+        if (!container) return;
+
+        const totals = [];
+        let plantedTotal = 0;
+        Object.entries(this.TREE_TYPES || {}).forEach(([type, config]) => {
+            const count = this.garden.filter((tree) => tree && tree.type === type).length;
+            plantedTotal += count;
+            totals.push({
+                type,
+                label: config?.name || type,
+                level: config?.level || 0,
+                count
+            });
+        });
+        totals.sort((a, b) => a.level - b.level);
+
+        const totalChip = document.getElementById('rg-tree-total-chip');
+        if (totalChip) {
+            totalChip.textContent = `${plantedTotal} / ${GARDEN_SIZE} plots`;
+        }
+
+        if (totals.length === 0) {
+            container.innerHTML = '<div class="empty-inventory">Tree data not available</div>';
+            return;
+        }
+
+        if (totals.every((entry) => entry.count === 0)) {
+            container.innerHTML = '<div class="empty-inventory">No trees planted yet</div>';
+            return;
+        }
+
+        container.innerHTML = totals.map((entry) => {
+            const percent = plantedTotal > 0 ? Math.round((entry.count / plantedTotal) * 100) : 0;
+            return `
+                <div class="composition-card" data-count="${entry.count}">
+                    <div class="composition-card__header">
+                        <span class="composition-label">${entry.label}</span>
+                        <span class="composition-level">Lvl ${entry.level}</span>
+                    </div>
+                    <div class="composition-metric">
+                        <strong>${entry.count}</strong>
+                        <span>${percent}% of garden</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+            renderProductionStatus() {
+                const container = document.getElementById('rg-production-status');
+                if (!container) return;
+
+                const ready = this.garden.filter((tree) => tree && tree.phase === 'ready').length;
+                const producing = this.garden.filter((tree) => tree && tree.phase !== 'ready').length;
+                const nextHarvestSeconds = this.garden
+                    .filter((tree) => tree && tree.phase === 'producing')
+                    .reduce((min, tree) => {
+                        const value = typeof tree.secondsRemaining === 'number' ? tree.secondsRemaining : Infinity;
+                        return Math.min(min, value);
+                    }, Infinity);
+                const nextHarvestLabel = Number.isFinite(nextHarvestSeconds)
+                    ? this.formatTime(nextHarvestSeconds)
+                    : 'N/A';
+
+                const farmInventoryTotal = this.getTotalResources(this.inventory);
+                const truckCargoTotal = this.getTotalResources(this.truckInventory);
+                const crateMetrics = this.getCrateLoadMetrics();
+
+                container.innerHTML = `
+                    <div class="production-card">
+                        <p>Ready Trees</p>
+                        <strong>${ready}</strong>
+                        <small>Collect whenever you want</small>
+                    </div>
+                    <div class="production-card">
+                        <p>Producing</p>
+                        <strong>${producing}</strong>
+                        <small>Next harvest in ${nextHarvestLabel}</small>
+                    </div>
+                    <div class="production-card">
+                        <p>Farm Inventory</p>
+                        <strong>${farmInventoryTotal.toLocaleString()}</strong>
+                        <small>Fruits staged at farm</small>
+                    </div>
+                    <div class="production-card">
+                        <p>Vehicle Cargo</p>
+                        <strong>${truckCargoTotal.toLocaleString()}</strong>
+                        <small>Loaded for the next trip</small>
+                    </div>
+                    <div class="production-card">
+                        <p>Crate Load</p>
+                        <strong>${crateMetrics.unlimited ? '∞' : `${crateMetrics.percent}%`}</strong>
+                        <small>${crateMetrics.unlimited ? 'Unlimited capacity active' : 'Of total crate space'}</small>
+                    </div>
+                `;
+            }
+
+            updateTransportPanel() {
+                this.updateVehicleToggle();
+
+                const statusText = {
+                    farm: 'At Farm',
+                    traveling_to_city: 'Traveling to City',
+                    city: 'At City',
+                    traveling_to_farm: 'Returning to Farm'
+                };
+                const locationEl = document.getElementById('rg-vehicle-location');
+                if (locationEl) {
+                    const displayLocation = this.truckStatus
+                        ? (this.truckStatus.isTraveling ? this.truckStatus.rawLocation : this.truckStatus.location)
+                        : this.truckLocation;
+                    locationEl.textContent = statusText[displayLocation] || 'Unknown';
+                }
+
+                const activeLabel = document.getElementById('rg-active-vehicle');
+                if (activeLabel) {
+                    activeLabel.textContent = this.activeVehicle === 'helicopter' ? 'Helicopter' : 'Truck';
+                }
+
+                const travelStateChip = document.getElementById('rg-travel-state-chip');
+                const progressFill = document.getElementById('rg-travel-progress-fill');
+                const progressLabel = document.getElementById('rg-travel-progress-label');
+                let travelLabel = 'Idle';
+                let progressPercent = 0;
+                if (this.truckStatus && this.truckStatus.isTraveling) {
+                    const secondsRemaining = Math.max(0, this.truckStatus.secondsRemaining || 0);
+                    const total = Math.max(1, this.timerConfig.truckTravel || 1);
+                    progressPercent = Math.min(100, Math.round(((total - secondsRemaining) / total) * 100));
+                    travelLabel = `Arrives in ${this.formatTime(secondsRemaining)}`;
+                    if (travelStateChip) {
+                        travelStateChip.textContent = this.truckStatus.rawLocation === 'traveling_to_city'
+                            ? 'Heading to city'
+                            : 'Returning to farm';
+                    }
+                } else if (travelStateChip) {
+                    travelStateChip.textContent = this.truckLocation === 'city' ? 'Waiting in city' : 'Ready at farm';
+                }
+                if (progressFill) {
+                    progressFill.style.width = `${progressPercent}%`;
+                }
+                if (progressLabel) {
+                    progressLabel.textContent = travelLabel;
+                }
+
+                const crateMetrics = this.getCrateLoadMetrics();
+                const crateChip = document.getElementById('rg-crate-load-chip');
+                if (crateChip) {
+                    crateChip.textContent = crateMetrics.unlimited ? '∞' : `${crateMetrics.percent}%`;
+                }
+                const crateNote = document.getElementById('rg-crate-note');
+                if (crateNote) {
+                    crateNote.textContent = crateMetrics.unlimited
+                        ? 'Unlimited crate upgrade active'
+                        : `${crateMetrics.loaded.toLocaleString()} / ${crateMetrics.capacity.toLocaleString()} fruits loaded`;
+                }
+
+                const treeMetrics = this.getTreeCrateMetrics();
+                const treeChip = document.getElementById('rg-tree-crate-chip');
+                if (treeChip) {
+                    treeChip.textContent = treeMetrics.unlimited
+                        ? `${treeMetrics.queued.toLocaleString()} staged`
+                        : `${treeMetrics.queued} / ${treeMetrics.capacity}`;
+                }
+                const treeNote = document.getElementById('rg-tree-note');
+                if (treeNote) {
+                    treeNote.textContent = treeMetrics.unlimited
+                        ? 'Unlimited tree crate active'
+                        : `${Math.max(0, treeMetrics.capacity - treeMetrics.queued)} slots open`;
+                }
+            }
+
+            updateVehicleToggle() {
+                const toggle = document.getElementById('rg-vehicle-toggle');
+                if (!toggle) return;
+                const unlockedHelicopter = Boolean(this.upgrades?.helicopterTransport);
+                toggle.querySelectorAll('.vehicle-btn').forEach((button) => {
+                    const vehicle = button.dataset.vehicle;
+                    const isActive = this.activeVehicle === vehicle;
+                    button.classList.toggle('is-active', isActive);
+                    if (vehicle === 'helicopter') {
+                        button.disabled = !unlockedHelicopter;
+                        button.dataset.state = unlockedHelicopter ? 'unlocked' : 'locked';
+                    } else {
+                        button.disabled = false;
+                        button.dataset.state = 'unlocked';
+                    }
+                });
+            }
+
+            handleVehicleSelect(vehicle) {
+                if (!vehicle || this.activeVehicle === vehicle) {
+                    return;
+                }
+                if (vehicle === 'helicopter' && (!this.upgrades?.helicopterTransport || !this.transport?.helicopter)) {
+                    this.showGameMessage('Unlock the Helicopter Transport upgrade in the LPA shop to fly crates instantly.', 'info');
+                    return;
+                }
+                const applied = this.applyVehicleState(vehicle);
+                if (!applied) {
+                    this.showGameMessage('Vehicle data is unavailable. Please refresh and try again.', 'error');
+                    return;
+                }
+                this.activeVehicle = vehicle;
+                this.updateUI();
+            }
+
+            getCrateLoadMetrics() {
+                const crates = this.fruitCrates || {};
+                let loaded = 0;
+                let capacity = 0;
+                let unlimited = false;
+                Object.values(crates).forEach((crate) => {
+                    const amount = Math.max(0, Number(crate?.loaded) || 0);
+                    loaded += amount;
+                    if (crate?.unlimited) {
+                        unlimited = true;
+                        return;
+                    }
+                    const crateCapacity = Math.max(0, Number(crate?.capacity) || 0);
+                    const multiplier = Math.max(1, Number(crate?.multiplier) || 1);
+                    capacity += crateCapacity * multiplier;
+                });
+                const percent = unlimited || capacity === 0
+                    ? 0
+                    : Math.min(100, Math.round((loaded / capacity) * 100));
+                return { loaded, capacity, percent, unlimited };
+            }
+
+            getTreeCrateMetrics() {
+                const queued = Object.values(this.treeCrate?.queued || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
+                const capacity = Math.max(0, Number(this.treeCrate?.capacity) || 0);
+                const unlimited = Boolean(this.treeCrate?.unlimited);
+                return { queued, capacity, unlimited };
+            }
+
+            ensureShopModal() {
+                if (this.modalElements) {
+                    return;
+                }
+
+                const overlay = document.createElement('div');
+                overlay.id = 'rg-modal-overlay';
+                overlay.className = 'rg-modal-overlay';
+                overlay.setAttribute('aria-hidden', 'true');
+                overlay.innerHTML = `
+                    <div class="rg-modal" role="dialog" aria-modal="true" aria-labelledby="rg-modal-title">
+                        <div class="rg-modal-header">
+                            <div>
+                                <p class="modal-kicker">Shop Preview</p>
+                                <h3 id="rg-modal-title" class="rg-modal-title"></h3>
+                            </div>
+                            <button type="button" class="rg-modal-close" aria-label="Close">×</button>
+                        </div>
+                        <div class="rg-modal-body"></div>
+                        <div class="rg-modal-actions"></div>
+                    </div>
+                `;
+
+                document.body.appendChild(overlay);
+
+                const modal = overlay.querySelector('.rg-modal');
+                const title = overlay.querySelector('.rg-modal-title');
+                const body = overlay.querySelector('.rg-modal-body');
+                const actions = overlay.querySelector('.rg-modal-actions');
+                const closeButton = overlay.querySelector('.rg-modal-close');
+
+                const closeHandler = (event) => {
+                    if (event.target === overlay) {
+                        this.closeShopModal();
+                    }
+                };
+
+                overlay.addEventListener('click', closeHandler);
+                if (closeButton) {
+                    closeButton.addEventListener('click', () => this.closeShopModal());
+                }
+
+                this.modalElements = {
+                    overlay,
+                    modal,
+                    title,
+                    body,
+                    actions
+                };
+            }
+
+            openShopModal({ title = 'Shop', body = '', actions = [] } = {}) {
+                this.ensureShopModal();
+                const modalEls = this.modalElements;
+                if (!modalEls) {
+                    return;
+                }
+
+                modalEls.title.textContent = title;
+                modalEls.body.innerHTML = typeof body === 'string' ? body : '';
+                modalEls.actions.innerHTML = '';
+
+                actions.forEach((action) => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.textContent = action.label;
+                    button.className = `rg-modal-btn ${action.variant || 'primary'}`;
+                    button.addEventListener('click', () => {
+                        if (typeof action.handler === 'function') {
+                            action.handler();
+                        }
+                    });
+                    modalEls.actions.appendChild(button);
+                });
+
+                modalEls.overlay.classList.add('is-visible');
+                modalEls.overlay.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('rg-modal-open');
+                document.addEventListener('keydown', this.handleModalKeydown);
+            }
+
+            closeShopModal() {
+                if (!this.modalElements) {
+                    return;
+                }
+                const { overlay, body, actions } = this.modalElements;
+                overlay.classList.remove('is-visible');
+                overlay.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('rg-modal-open');
+                document.removeEventListener('keydown', this.handleModalKeydown);
+                if (body) {
+                    body.innerHTML = '';
+                }
+                if (actions) {
+                    actions.innerHTML = '';
+                }
+            }
+
+            promptTreePurchase(cellIndex) {
+                if (!this.canBuyTree(cellIndex)) {
+                    this.showGameMessage('Cannot buy tree here yet!', 'error');
+                    return;
+                }
+
+                const baseTree = this.TREE_TYPES.banana;
+                if (!baseTree) {
+                    this.showGameMessage('Tree configuration missing. Please refresh.', 'error');
+                    return;
+                }
+                const planter = this.plantingSummary?.banana || {};
+                const crateMetrics = this.getTreeCrateMetrics();
+                const queuedForTier = Number(this.treeCrate?.queued?.banana) || 0;
+                const targets = Array.isArray(planter.targets) ? planter.targets : [];
+                const preferredTarget = targets.includes(cellIndex) ? cellIndex : targets[0];
+                const targetPreview = typeof preferredTarget === 'number'
+                    ? `Recommended plot: #${preferredTarget + 1}`
+                    : 'No planting slots available right now';
+                const slotsOpen = crateMetrics.unlimited
+                    ? 'Unlimited capacity active'
+                    : `${Math.max(0, crateMetrics.capacity - crateMetrics.queued)} slots open`;
+
+                const body = `
+                    <div class="rg-modal-section">
+                        <h4>Purchase Details</h4>
+                        <ul>
+                            <li>Cost: <strong>${baseTree.cost.toLocaleString()} coins</strong></li>
+                            <li>Current coins: ${this.coins.toLocaleString()}</li>
+                            <li>${targetPreview}</li>
+                        </ul>
+                    </div>
+                    <div class="rg-modal-section">
+                        <h4>Tree Crate</h4>
+                        <p>Queued Banana Trees: <strong>${queuedForTier}</strong></p>
+                        <p>${slotsOpen}</p>
+                    </div>
+                    <div class="rg-modal-section">
+                        <h4>Farm Inventory</h4>
+                        <p>Total fruits staged: <strong>${this.getTotalResources(this.inventory).toLocaleString()}</strong></p>
+                        <p>Vehicle: ${this.truckLocation === 'farm' ? 'At farm (can plant immediately after purchase)' : 'In city (tree will wait in crate)'}</p>
+                    </div>
+                `;
+
+                this.openShopModal({
+                    title: 'Purchase New Tree',
+                    body,
+                    actions: [
+                        {
+                            label: `Buy for ${baseTree.cost.toLocaleString()} coins`,
+                            variant: 'primary',
+                            handler: () => {
+                                this.closeShopModal();
+                                this.buyTree(cellIndex);
+                            }
+                        },
+                        {
+                            label: 'Cancel',
+                            variant: 'ghost',
+                            handler: () => this.closeShopModal()
+                        }
+                    ]
+                });
+            }
+
+            promptTreeUpgrade(cellIndex) {
+                const tree = this.garden[cellIndex];
+                if (!tree) {
+                    this.showGameMessage('No tree in this slot to upgrade!', 'error');
+                    return;
+                }
+
+                if (!this.canUpgradeTree(cellIndex)) {
+                    this.showGameMessage('Upgrade requirements not met yet!', 'error');
+                    return;
+                }
+
+                const currentConfig = this.TREE_TYPES[tree.type];
+                if (!currentConfig) {
+                    this.showGameMessage('Tree configuration missing. Please refresh.', 'error');
+                    return;
+                }
+                const nextEntry = Object.entries(this.TREE_TYPES).find(([, config]) => config.level === currentConfig.level + 1);
+                if (!nextEntry) {
+                    this.showGameMessage('No further upgrades available.', 'info');
+                    return;
+                }
+                const [nextKey, nextConfig] = nextEntry;
+                const planter = this.plantingSummary?.[nextKey] || {};
+                const targets = Array.isArray(planter.targets) ? planter.targets : [];
+                const summaryText = targets.length > 0
+                    ? `Eligible plots: ${targets.map((idx) => `#${idx + 1}`).join(', ')}`
+                    : 'No replacement slots detected—upgrade will occur in-place';
+
+                const body = `
+                    <div class="rg-modal-section">
+                        <h4>Upgrade Preview</h4>
+                        <p>${currentConfig.name} → <strong>${nextConfig.name}</strong></p>
+                        <p>Cost: <strong>${nextConfig.cost.toLocaleString()} coins</strong></p>
+                        <p>Current coins: ${this.coins.toLocaleString()}</p>
+                        <p>${summaryText}</p>
+                    </div>
+                    <div class="rg-modal-section">
+                        <h4>Production Boost</h4>
+                        <ul>
+                            <li>Fruits / cycle: ${currentConfig.fps} → <strong>${nextConfig.fps}</strong></li>
+                            <li>Coin efficiency: 1 coin per ${currentConfig.fruitsPerCoin} fruits → ${nextConfig.fruitsPerCoin}</li>
+                        </ul>
+                    </div>
+                `;
+
+                this.openShopModal({
+                    title: `Upgrade Plot #${cellIndex + 1}`,
+                    body,
+                    actions: [
+                        {
+                            label: `Upgrade for ${nextConfig.cost.toLocaleString()} coins`,
+                            variant: 'primary',
+                            handler: () => {
+                                this.closeShopModal();
+                                this.upgradeTree(cellIndex);
+                            }
+                        },
+                        {
+                            label: 'Cancel',
+                            variant: 'ghost',
+                            handler: () => this.closeShopModal()
+                        }
+                    ]
+                });
+            }
 
     // Update UI
     updateUI() {
@@ -605,6 +1411,9 @@ export default class RichGardenGame {
         this.renderGardenGrid();
         this.renderInventory();
         this.renderTruckInventory();
+        this.renderCrateStatus();
+        this.renderTreeCrate();
+        this.renderPlantingAvailability();
 
         const loadBtn = document.getElementById('rg-load-truck-btn');
         const sendBtn = document.getElementById('rg-send-truck-btn');
@@ -629,7 +1438,7 @@ export default class RichGardenGame {
         switch (phase) {
             case 'producing': return 'Growing';
             case 'ready': return 'Ready to Collect';
-            case 'collecting': return 'Collecting';
+            case 'collecting': return 'Harvesting';
             default: return 'Unknown';
         }
     }
@@ -658,6 +1467,156 @@ export default class RichGardenGame {
         }, 0);
     }
 
+    getActiveVehicleLabel() {
+        return this.activeVehicle === 'helicopter' ? 'Helicopter' : 'Truck';
+    }
+
+    cloneResourceMap(source = {}) {
+        const result = {};
+        if (!source || typeof source !== 'object') {
+            return result;
+        }
+        Object.entries(source).forEach(([key, value]) => {
+            result[key] = Number(value) || 0;
+        });
+        return result;
+    }
+
+    cloneCrateMap(source = {}) {
+        const result = {};
+        if (!source || typeof source !== 'object') {
+            return result;
+        }
+        Object.entries(source).forEach(([key, crate]) => {
+            const normalized = crate || {};
+            result[key] = {
+                ...normalized,
+                loaded: Number(normalized.loaded) || 0,
+                capacity: Number(normalized.capacity) || 0,
+                multiplier: Number(normalized.multiplier) || 1,
+                unlimited: Boolean(normalized.unlimited)
+            };
+        });
+        return result;
+    }
+
+    cloneTreeCrate(source = {}) {
+        const data = source || {};
+        return {
+            capacity: Number(data.capacity) || 0,
+            unlimited: Boolean(data.unlimited),
+            queued: this.cloneResourceMap(data.queued)
+        };
+    }
+
+    buildEmptyVehicleState(mode = 'truck') {
+        return {
+            mode,
+            label: mode === 'helicopter' ? 'Helicopter' : 'Truck',
+            location: 'farm',
+            isTraveling: false,
+            secondsRemaining: 0,
+            travelSeconds: this.timerConfig.truckTravel,
+            departureTime: null,
+            destination: null,
+            fruitCrates: {},
+            treeCrate: { capacity: 0, queued: {}, unlimited: false },
+            cargo: {}
+        };
+    }
+
+    normalizeVehiclePayload(raw, mode = 'truck') {
+        if (!raw || typeof raw !== 'object') {
+            return this.buildEmptyVehicleState(mode);
+        }
+        const location = raw.location || 'farm';
+        return {
+            mode: raw.mode || mode,
+            label: raw.label || (mode === 'helicopter' ? 'Helicopter' : 'Truck'),
+            location,
+            isTraveling: Boolean(raw.isTraveling),
+            secondsRemaining: typeof raw.secondsRemaining === 'number'
+                ? Math.max(0, Math.ceil(raw.secondsRemaining))
+                : 0,
+            travelSeconds: Number(raw.travelSeconds) > 0 ? Number(raw.travelSeconds) : this.timerConfig.truckTravel,
+            departureTime: raw.departureTime ? new Date(raw.departureTime) : null,
+            destination: raw.destination || null,
+            fruitCrates: this.cloneCrateMap(raw.fruitCrates),
+            treeCrate: this.cloneTreeCrate(raw.treeCrate),
+            cargo: this.cloneResourceMap(raw.cargo)
+        };
+    }
+
+    prepareTransportState(rawTransport) {
+        const prepared = {
+            activeMode: 'truck',
+            truck: this.buildEmptyVehicleState('truck'),
+            helicopter: null
+        };
+        if (!rawTransport || typeof rawTransport !== 'object') {
+            return prepared;
+        }
+        if (rawTransport.truck) {
+            prepared.truck = this.normalizeVehiclePayload(rawTransport.truck, 'truck');
+        }
+        if (rawTransport.helicopter) {
+            prepared.helicopter = this.normalizeVehiclePayload(rawTransport.helicopter, 'helicopter');
+        }
+        if (rawTransport.activeMode === 'helicopter' && prepared.helicopter) {
+            prepared.activeMode = 'helicopter';
+        }
+        return prepared;
+    }
+
+    applyVehicleState(vehicle) {
+        if (!this.transport) {
+            return false;
+        }
+        const vehicleState = this.transport[vehicle];
+        if (!vehicleState) {
+            return false;
+        }
+        const location = vehicleState.location || 'farm';
+        const secondsRemaining = typeof vehicleState.secondsRemaining === 'number'
+            ? Math.max(0, Math.ceil(vehicleState.secondsRemaining))
+            : 0;
+        this.truckStatus = {
+            location,
+            rawLocation: location,
+            isTraveling: Boolean(vehicleState.isTraveling),
+            secondsRemaining,
+            departureTime: vehicleState.departureTime ? new Date(vehicleState.departureTime) : null
+        };
+        this.truckLocation = location;
+        this.truckInventory = this.cloneResourceMap(vehicleState.cargo);
+        this.fruitCrates = this.cloneCrateMap(vehicleState.fruitCrates);
+        this.treeCrate = this.cloneTreeCrate(vehicleState.treeCrate);
+        if (Number.isFinite(vehicleState.travelSeconds) && vehicleState.travelSeconds > 0) {
+            this.timerConfig.truckTravel = vehicleState.travelSeconds;
+        }
+        this.transport.activeMode = vehicle;
+        return true;
+    }
+
+    applyActiveVehicleState() {
+        return this.applyVehicleState(this.activeVehicle);
+    }
+
+    resolvePreferredVehicleMode() {
+        const unlockedHelicopter = Boolean(this.upgrades?.helicopterTransport);
+        const previousSelection = this.activeVehicle;
+        if (previousSelection === 'helicopter' && unlockedHelicopter && this.transport?.helicopter) {
+            return 'helicopter';
+        }
+        if (previousSelection === 'truck') {
+            return 'truck';
+        }
+        if (this.transport?.activeMode === 'helicopter' && unlockedHelicopter && this.transport?.helicopter) {
+            return 'helicopter';
+        }
+        return 'truck';
+    }
+
     getCurrentGardenLevel() {
         if (!this.garden.some(tree => tree)) return 1;
 
@@ -665,14 +1624,46 @@ export default class RichGardenGame {
         return minLevel;
     }
 
+    getPlantableTypesForCell(cellIndex) {
+        const summary = this.plantingSummary || {};
+        const crate = (this.treeCrate && this.treeCrate.queued) || {};
+        const plantable = [];
+
+        Object.entries(summary).forEach(([type, info]) => {
+            const queued = Number(crate[type]) || 0;
+            if (queued <= 0) {
+                return;
+            }
+            const targets = Array.isArray(info?.targets) ? info.targets : [];
+            if (!targets.includes(cellIndex)) {
+                return;
+            }
+            plantable.push(type);
+        });
+
+        plantable.sort((a, b) => {
+            const levelA = this.TREE_TYPES[a]?.level || 0;
+            const levelB = this.TREE_TYPES[b]?.level || 0;
+            return levelA - levelB;
+        });
+
+        return plantable;
+    }
+
     canBuyTree(cellIndex) {
+        const bananaTargets = Array.isArray(this.plantingSummary?.banana?.targets)
+            ? this.plantingSummary.banana.targets
+            : null;
+        if (bananaTargets && !bananaTargets.includes(cellIndex)) {
+            return false;
+        }
         // Must buy sequentially from left to right
         for (let i = 0; i < cellIndex; i++) {
             if (!this.garden[i]) return false;
         }
         // Allow buying first tree at farm, others require city
         const isFirstTree = cellIndex === 0 && this.garden.every(tree => tree === null);
-        const canAfford = this.coins >= this.TREE_TYPES.common.cost;
+        const canAfford = this.coins >= this.TREE_TYPES.banana.cost;
         return canAfford && ((isFirstTree && this.truckLocation === 'farm') || this.truckLocation === 'city');
     }
 
@@ -714,14 +1705,18 @@ export default class RichGardenGame {
             const response = await fetch('/api/rich-garden/buy_tree', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, cellIndex })
+                body: JSON.stringify({ username, queueOnly: true, vehicle: this.activeVehicle })
             });
 
             const data = await response.json();
             if (data.success) {
                 this.syncStateFromPayload(data);
                 this.updateUI();
-                this.showGameMessage('Tree purchased!', 'success');
+                this.showGameMessage('Tree purchased and staged in crate!', 'success');
+                const planted = await this.plantTreeFromCrate(cellIndex, 'banana');
+                if (!planted) {
+                    this.showGameMessage('Tree is waiting in the crate—plant it from the panel!', 'info');
+                }
                 setTimeout(() => this.refreshGameStatus(), 1000);
             } else {
                 this.showGameMessage(data.error || 'Failed to buy tree', 'error');
@@ -745,7 +1740,7 @@ export default class RichGardenGame {
             const response = await fetch('/api/rich-garden/upgrade_tree', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, cellIndex })
+                body: JSON.stringify({ username, cellIndex, vehicle: this.activeVehicle })
             });
 
             const data = await response.json();
@@ -760,6 +1755,46 @@ export default class RichGardenGame {
         } catch (error) {
             console.error('Upgrade tree error:', error);
             this.showGameMessage('Failed to upgrade tree', 'error');
+        }
+    }
+
+    async plantTreeFromCrate(cellIndex, treeType) {
+        if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex >= GARDEN_SIZE) {
+            this.showGameMessage('Invalid plot selected for planting', 'error');
+            return false;
+        }
+
+        const plantableTypes = this.getPlantableTypesForCell(cellIndex);
+        if (!plantableTypes.includes(treeType)) {
+            this.showGameMessage('No matching tree staged for this plot', 'error');
+            return false;
+        }
+
+        try {
+            const username = window.authManager?.currentUser?.username;
+            if (!username) return;
+
+            const response = await fetch('/api/rich-garden/plant_from_crate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, cellIndex, treeType, vehicle: this.activeVehicle })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                this.syncStateFromPayload(data);
+                this.updateUI();
+                this.showGameMessage('Tree planted from crate!', 'success');
+                setTimeout(() => this.refreshGameStatus(), 1000);
+                return true;
+            } else {
+                this.showGameMessage(data.error || 'Unable to plant tree', 'error');
+                return false;
+            }
+        } catch (error) {
+            console.error('Plant from crate error:', error);
+            this.showGameMessage('Unable to plant tree', 'error');
+            return false;
         }
     }
 
@@ -792,11 +1827,11 @@ export default class RichGardenGame {
                 const collectedTotals = data.collected || {};
                 const totalFruits = Object.values(collectedTotals).reduce((sum, amount) => sum + amount, 0);
                 if (totalFruits > 0) {
-                    this.showGameMessage(`Collected ${totalFruits.toLocaleString()} fruits! Collection in progress...`, 'success');
+                    this.showGameMessage(`Collected ${totalFruits.toLocaleString()} fruits and moved them into farm inventory.`, 'success');
                 } else {
-                    this.showGameMessage('Collection started! Tree will be harvested soon.', 'success');
+                    this.showGameMessage('Harvest complete! Fruits added to farm inventory.', 'success');
                 }
-                // Don't refresh status here - let the collection timer handle it
+                // Server response already includes refreshed state
             } else {
                 this.showGameMessage(data.error || 'Failed to start collection', 'error');
             }
@@ -822,8 +1857,14 @@ export default class RichGardenGame {
     }
 
     async loadTruck() {
+        const vehicleLabel = this.getActiveVehicleLabel();
+        if (this.truckStatus?.isTraveling) {
+            this.showGameMessage(`${vehicleLabel} is traveling right now!`, 'error');
+            return;
+        }
+
         if (this.truckLocation !== 'farm') {
-            this.showGameMessage('Truck must be at farm to load!', 'error');
+            this.showGameMessage(`${vehicleLabel} must be at the farm to load!`, 'error');
             return;
         }
 
@@ -839,7 +1880,7 @@ export default class RichGardenGame {
             const response = await fetch('/api/rich-garden/load_truck', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle: this.activeVehicle })
             });
 
             const data = await response.json();
@@ -855,9 +1896,9 @@ export default class RichGardenGame {
                         return `${amount.toLocaleString()} ${label}`;
                     });
                     const detail = types.length > 0 ? ` (${types.join(', ')})` : '';
-                    this.showGameMessage(`Loaded ${loadedTotal.toLocaleString()} fruits onto the truck${detail}.`, 'success');
+                    this.showGameMessage(`Loaded ${loadedTotal.toLocaleString()} fruits onto the ${vehicleLabel.toLowerCase()}${detail}.`, 'success');
                 } else {
-                    this.showGameMessage('Truck loaded.', 'success');
+                    this.showGameMessage(`${vehicleLabel} loaded.`, 'success');
                 }
 
                 if (data.collected) {
@@ -869,17 +1910,23 @@ export default class RichGardenGame {
 
                 setTimeout(() => this.refreshGameStatus(), 1000);
             } else {
-                this.showGameMessage(data.error || 'Failed to load truck', 'error');
+                this.showGameMessage(data.error || 'Failed to load vehicle', 'error');
             }
         } catch (error) {
-            console.error('Load truck error:', error);
-            this.showGameMessage('Failed to load truck', 'error');
+            console.error('Load vehicle error:', error);
+            this.showGameMessage('Failed to load vehicle', 'error');
         }
     }
 
     async sendTruckToCity() {
+        const vehicleLabel = this.getActiveVehicleLabel();
+        if (this.truckStatus?.isTraveling) {
+            this.showGameMessage(`${vehicleLabel} is already traveling!`, 'error');
+            return;
+        }
+
         if (this.truckLocation !== 'farm') {
-            this.showGameMessage('Truck is not at farm!', 'error');
+            this.showGameMessage(`${vehicleLabel} is not at the farm!`, 'error');
             return;
         }
 
@@ -890,33 +1937,39 @@ export default class RichGardenGame {
             const response = await fetch('/api/rich-garden/send_truck', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle: this.activeVehicle })
             });
 
             const data = await response.json();
             if (data.success) {
                 this.syncStateFromPayload(data);
                 this.updateUI();
-                this.showGameMessage('Truck sent to city!', 'info');
+                this.showGameMessage(`${vehicleLabel} sent to the city!`, 'info');
                 setTimeout(() => this.refreshGameStatus(), 1000);
             } else {
-                this.showGameMessage(data.error || 'Failed to send truck', 'error');
+                this.showGameMessage(data.error || 'Failed to send vehicle', 'error');
             }
         } catch (error) {
-            console.error('Send truck error:', error);
-            this.showGameMessage('Failed to send truck', 'error');
+            console.error('Send vehicle error:', error);
+            this.showGameMessage('Failed to send vehicle', 'error');
         }
     }
 
     async sellFruits() {
+        const vehicleLabel = this.getActiveVehicleLabel();
+        if (this.truckStatus?.isTraveling) {
+            this.showGameMessage(`${vehicleLabel} is traveling and cannot sell right now!`, 'error');
+            return;
+        }
+
         if (this.truckLocation !== 'city') {
-            this.showGameMessage('Truck must be at city to sell fruits!', 'error');
+            this.showGameMessage(`${vehicleLabel} must be at the city to sell fruits!`, 'error');
             return;
         }
 
         const totalCargo = this.getTotalResources(this.truckInventory);
         if (totalCargo === 0) {
-            this.showGameMessage('No fruits loaded on the truck!', 'error');
+            this.showGameMessage('No fruits loaded on the vehicle!', 'error');
             return;
         }
 
@@ -927,7 +1980,7 @@ export default class RichGardenGame {
             const response = await fetch('/api/rich-garden/sell_fruits', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle: this.activeVehicle })
             });
 
             const data = await response.json();
@@ -935,7 +1988,7 @@ export default class RichGardenGame {
                 this.syncStateFromPayload(data);
                 this.updateUI();
                 const soldTotal = this.getTotalResources(data.sold || {});
-                this.showGameMessage(`Sold ${soldTotal.toLocaleString()} fruits for ${data.earned} coins!`, 'success');
+                this.showGameMessage(`Sold ${soldTotal.toLocaleString()} fruits for ${data.earned} coins using the ${vehicleLabel.toLowerCase()}!`, 'success');
                 if (data.collected) {
                     const collectedTotal = this.getTotalResources(data.collected);
                     if (collectedTotal > 0) {
@@ -953,8 +2006,14 @@ export default class RichGardenGame {
     }
 
     async returnTruckToFarm() {
+        const vehicleLabel = this.getActiveVehicleLabel();
+        if (this.truckStatus?.isTraveling) {
+            this.showGameMessage(`${vehicleLabel} is already en route!`, 'error');
+            return;
+        }
+
         if (this.truckLocation !== 'city') {
-            this.showGameMessage('Truck must be at city to return!', 'error');
+            this.showGameMessage(`${vehicleLabel} must be at the city to start the return trip!`, 'error');
             return;
         }
 
@@ -965,21 +2024,21 @@ export default class RichGardenGame {
             const response = await fetch('/api/rich-garden/return_truck', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle: this.activeVehicle })
             });
 
             const data = await response.json();
             if (data.success) {
                 this.syncStateFromPayload(data);
                 this.updateUI();
-                this.showGameMessage('Truck returning to farm!', 'info');
+                this.showGameMessage(`${vehicleLabel} returning to the farm!`, 'info');
                 setTimeout(() => this.refreshGameStatus(), 1000);
             } else {
-                this.showGameMessage(data.error || 'Failed to return truck', 'error');
+                this.showGameMessage(data.error || 'Failed to return vehicle', 'error');
             }
         } catch (error) {
-            console.error('Return truck error:', error);
-            this.showGameMessage('Failed to return truck', 'error');
+            console.error('Return vehicle error:', error);
+            this.showGameMessage('Failed to return vehicle', 'error');
         }
     }
 
