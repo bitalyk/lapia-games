@@ -375,6 +375,82 @@ class RichGardenShopController extends BaseShopController {
     return flags[item.parameters.upgradeKey] ? 1 : 0;
   }
 
+  collectQueuedTreeCounts(progress = {}) {
+    const counts = {};
+    const merge = (queued) => {
+      if (!queued) {
+        return;
+      }
+      Object.entries(queued).forEach(([type, amount]) => {
+        const value = Math.max(0, Number(amount) || 0);
+        if (value > 0) {
+          counts[type] = (counts[type] || 0) + value;
+        }
+      });
+    };
+
+    if (progress.transport) {
+      merge(progress.transport.truck?.treeCrate?.queued);
+      merge(progress.transport.helicopter?.treeCrate?.queued);
+    }
+    if (progress.crates?.tree?.queued) {
+      merge(progress.crates.tree.queued);
+    }
+    return counts;
+  }
+
+  getTreeLevelByType(type) {
+    const tier = RICH_GARDEN_TREE_ORDER.find((entry) => entry.key === type);
+    return tier?.level || 0;
+  }
+
+  buildPlacementSummaryForTier(planner, tier) {
+    const summary = {
+      canPlant: false,
+      targets: [],
+      emptyTargets: [],
+      upgradeTargets: [],
+      placement: null,
+      note: null
+    };
+
+    if (!planner) {
+      return summary;
+    }
+
+    const garden = Array.isArray(planner.garden) ? planner.garden : [];
+    garden.forEach((plot, index) => {
+      const isEmpty = !plot;
+      const currentLevel = isEmpty ? 0 : this.getTreeLevelByType(plot.type);
+      if (currentLevel < (tier.level || 1)) {
+        summary.targets.push(index);
+        if (isEmpty) {
+          summary.emptyTargets.push(index);
+        } else {
+          summary.upgradeTargets.push(index);
+        }
+      }
+    });
+
+    summary.canPlant = summary.targets.length > 0;
+    if (!summary.canPlant) {
+      return summary;
+    }
+
+    if (summary.emptyTargets.length > 0) {
+      summary.placement = "empty-slot";
+      const count = summary.emptyTargets.length;
+      summary.note = `${count} empty slot${count === 1 ? "" : "s"} available`;
+    } else if (summary.upgradeTargets.length > 0) {
+      summary.placement = "upgrade";
+      const count = summary.upgradeTargets.length;
+      const tierLabel = tier.label || `Tier ${tier.level}`;
+      summary.note = `Upgrades ${count} lower-tier tree${count === 1 ? "" : "s"} into ${tierLabel}`;
+    }
+
+    return summary;
+  }
+
   buildGardenSnapshot(user) {
     const progress = this.ensureProgress(user);
     const planner = new FarmPlanner({ garden: progress.garden });
@@ -389,25 +465,37 @@ class RichGardenShopController extends BaseShopController {
       composition[plot.type] = (composition[plot.type] || 0) + 1;
     });
     const emptySlots = planner.getEmptySlots();
+    const queueCounts = this.collectQueuedTreeCounts(progress);
+    const plantingSummary = RICH_GARDEN_TREE_ORDER.reduce((acc, tier) => {
+      acc[tier.key] = this.buildPlacementSummaryForTier(planner, tier);
+      return acc;
+    }, {});
     return {
       progress,
       planner,
       composition,
       emptySlots,
       totalSlots: planner.size,
-      plantingSummary: planner.getPlantingSummary()
+      plantingSummary,
+      queueCounts
     };
   }
 
   serializeGardenContext(snapshot) {
-    const tiers = RICH_GARDEN_TREE_ORDER.map((tier) => ({
-      key: tier.key,
-      label: tier.label,
-      level: tier.level,
-      count: snapshot.composition[tier.key] || 0,
-      canPlant: snapshot.plantingSummary[tier.key]?.canPlant || false,
-      targets: snapshot.plantingSummary[tier.key]?.targets || []
-    }));
+    const tiers = RICH_GARDEN_TREE_ORDER.map((tier) => {
+      const summary = snapshot.plantingSummary[tier.key] || {};
+      return {
+        key: tier.key,
+        label: tier.label,
+        level: tier.level,
+        count: snapshot.composition[tier.key] || 0,
+        queued: snapshot.queueCounts?.[tier.key] || 0,
+        canPlant: Boolean(summary.canPlant),
+        targets: Array.isArray(summary.targets) ? summary.targets : [],
+        placement: summary.placement || null,
+        note: summary.note || null
+      };
+    });
     return {
       garden: {
         totalSlots: snapshot.totalSlots,
@@ -423,16 +511,47 @@ class RichGardenShopController extends BaseShopController {
   buildItemContext(item, snapshot) {
     const treeType = item.parameters?.treeType;
     const planting = snapshot.plantingSummary[treeType] || { canPlant: false, targets: [] };
+    const targets = Array.isArray(planting.targets) ? planting.targets : [];
+    const emptyTargets = Array.isArray(planting.emptyTargets) ? planting.emptyTargets : [];
+    const upgradeTargets = Array.isArray(planting.upgradeTargets) ? planting.upgradeTargets : [];
     return {
       treeType,
       level: item.parameters?.level || 0,
-      canPlant: planting.canPlant,
-      targets: planting.targets,
+      canPlant: Boolean(planting.canPlant),
+      targets,
+      emptyTargets,
+      upgradeTargets,
+      placement: planting.placement || null,
+      queued: snapshot.queueCounts?.[treeType] || 0,
       garden: {
         totalSlots: snapshot.totalSlots,
         emptySlots: snapshot.emptySlots.length,
         composition: snapshot.composition
       }
+    };
+  }
+
+  getTierAvailability(snapshot, treeType) {
+    const tier = RICH_GARDEN_TREE_ORDER.find((entry) => entry.key === treeType);
+    if (!tier) {
+      return { canPlant: false, reason: "Tier unavailable" };
+    }
+
+    const planting = snapshot.plantingSummary[treeType];
+    if (!planting || !planting.canPlant) {
+      return {
+        canPlant: false,
+        reason: "Garden already full of equal or higher-tier trees."
+      };
+    }
+
+    return {
+      canPlant: true,
+      placement: planting.placement,
+      targets: Array.isArray(planting.targets) ? planting.targets : [],
+      emptyTargets: Array.isArray(planting.emptyTargets) ? planting.emptyTargets : [],
+      upgradeTargets: Array.isArray(planting.upgradeTargets) ? planting.upgradeTargets : [],
+      note: planting.note
     };
   }
 
@@ -442,12 +561,15 @@ class RichGardenShopController extends BaseShopController {
       return base;
     }
     const snapshot = snapshotOverride || this.buildGardenSnapshot(user);
-    const planting = snapshot.plantingSummary[item.parameters.treeType] || { canPlant: false, targets: [] };
-    base.status.canPlant = planting.canPlant;
-    if (!planting.canPlant && !base.status.disabledReason) {
-      base.status.disabledReason = "Garden already optimized for this tier.";
+    const availability = this.getTierAvailability(snapshot, item.parameters.treeType);
+    base.status.canPlant = availability.canPlant;
+    if (!availability.canPlant && availability.reason) {
+      base.status.disabledReason = availability.reason;
     }
-    base.context = this.buildItemContext(item, snapshot);
+    base.context = {
+      ...this.buildItemContext(item, snapshot),
+      availability
+    };
     return base;
   }
 
@@ -456,16 +578,21 @@ class RichGardenShopController extends BaseShopController {
       return { valid: true };
     }
     const snapshot = this.buildGardenSnapshot(user);
-    const planting = snapshot.plantingSummary[item.parameters.treeType] || { canPlant: false };
-    if (!planting.canPlant) {
+    const availability = this.getTierAvailability(snapshot, item.parameters.treeType);
+    if (!availability.canPlant) {
       return { valid: false, reason: "NO_PLANTING_SLOT" };
     }
+    const planting = snapshot.plantingSummary[item.parameters.treeType] || { targets: [] };
+    const targets = Array.isArray(planting.targets) ? planting.targets : [];
     return {
       valid: true,
-      context: { plantingTargets: planting.targets },
+      context: {
+        plantingTargets: targets,
+        placement: planting.placement || null
+      },
       metadata: {
         treeType: item.parameters.treeType,
-        placement: planting.targets?.length ? "upgrade" : "empty-slot"
+        placement: planting.placement || (targets.length ? "upgrade" : "empty-slot")
       }
     };
   }
@@ -493,25 +620,60 @@ class RichGardenShopController extends BaseShopController {
     };
   }
 
+  findLowestLevelSlotIndex(garden) {
+    let lowestIndex = 0;
+    let lowestLevel = Infinity;
+    garden.forEach((tree, index) => {
+      if (tree === null && lowestLevel !== -1) {
+        lowestLevel = -1;
+        lowestIndex = index;
+        return;
+      }
+      const tier = tree ? RICH_GARDEN_TREE_ORDER.find((entry) => entry.key === tree.type) : null;
+      const level = tier?.level ?? Infinity;
+      if (level < lowestLevel) {
+        lowestLevel = level;
+        lowestIndex = index;
+      }
+    });
+    return lowestIndex;
+  }
+
+  findUpgradeTargetIndex(garden, targetLevel) {
+    if (targetLevel <= 1) {
+      return -1;
+    }
+    const predecessor = RICH_GARDEN_TREE_ORDER[targetLevel - 2];
+    if (!predecessor) {
+      return -1;
+    }
+    return garden.findIndex((tree) => tree?.type === predecessor.key);
+  }
+
   placeTree(user, treeType, level) {
     const progress = this.ensureProgress(user);
     const garden = progress.garden;
-    const emptyIndex = garden.findIndex((cell) => cell === null);
     const newTree = this.createTree(treeType);
 
-    if (emptyIndex >= 0) {
-      garden[emptyIndex] = newTree;
+    const tier = RICH_GARDEN_TREE_ORDER.find((entry) => entry.key === treeType);
+    if (!tier) {
+      return;
+    }
+
+    if (tier.level === 1) {
+      const emptyIndex = garden.findIndex((cell) => cell === null);
+      if (emptyIndex >= 0) {
+        garden[emptyIndex] = newTree;
+      } else {
+        const fallbackIndex = this.findLowestLevelSlotIndex(garden);
+        garden[fallbackIndex] = newTree;
+      }
     } else {
-      let lowestIndex = 0;
-      let lowestLevel = Infinity;
-      garden.forEach((tree, index) => {
-        const treeLevel = RICH_GARDEN_TREE_ORDER.find((tier) => tier.key === tree?.type)?.level || Infinity;
-        if (treeLevel < lowestLevel) {
-          lowestLevel = treeLevel;
-          lowestIndex = index;
-        }
-      });
-      garden[lowestIndex] = newTree;
+      let targetIndex = this.findUpgradeTargetIndex(garden, tier.level);
+      if (targetIndex === -1) {
+        targetIndex = this.findLowestLevelSlotIndex(garden);
+      }
+      garden[targetIndex] = newTree;
       const flags = this.getUpgradeFlags(user);
       flags.premiumUnlockLevel = Math.max(flags.premiumUnlockLevel || 0, level || 0);
       user.markModified("richGardenUpgrades");

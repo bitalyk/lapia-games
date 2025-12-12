@@ -5,7 +5,7 @@ import {
     serializeFruitCrateSet,
     FarmPlanner
 } from '../services/rich-garden-inventory.js';
-import { TransportFleet } from '../services/rich-garden-transport.js';
+import { TransportFleet, VEHICLE_PRESETS } from '../services/rich-garden-transport.js';
 
 const router = express.Router();
 
@@ -29,6 +29,8 @@ const LEGACY_TREE_KEYS = {
 };
 
 const GARDEN_SIZE = 10;
+
+const GARDEN_MANAGEMENT_ENABLED = process.env.GARDEN_MANAGEMENT === 'true';
 
 // Production constants
 const PRODUCTION_TIME = process.env.FAST_MODE === 'true' ? 30 : 4 * 60 * 60; // 30s testing / 4h normal
@@ -312,6 +314,81 @@ function summarizeFruitCrates(crateSet = {}) {
     return summary;
 }
 
+function buildVehicleTransportMetrics(vehicle) {
+    const defaultMetrics = {
+        mode: vehicle?.mode || null,
+        location: vehicle?.location || null,
+        fruit: { loaded: 0, capacity: 0, percent: 0, unlimited: false },
+        tree: { queued: 0, capacity: 0, availableSlots: 0, unlimited: false },
+        canSell: false
+    };
+
+    if (!vehicle) {
+        return defaultMetrics;
+    }
+
+    const fruitSummary = {
+        loaded: 0,
+        capacity: 0,
+        percent: 0,
+        unlimited: Boolean(vehicle.unlimitedFruit)
+    };
+    let hasSellableCargo = false;
+
+    Object.entries(vehicle.fruitCrates || {}).forEach(([type, crate]) => {
+        if (!crate) {
+            return;
+        }
+        const loaded = Math.max(0, Number(crate.loaded) || 0);
+        fruitSummary.loaded += loaded;
+
+        if (crate.unlimited) {
+            fruitSummary.unlimited = true;
+        }
+
+        if (!fruitSummary.unlimited) {
+            const effectiveCapacity = typeof crate.effectiveCapacity === 'number'
+                ? crate.effectiveCapacity
+                : Math.max(0, Number(crate.capacity) || 0) * Math.max(1, Number(crate.multiplier) || 1);
+            fruitSummary.capacity += effectiveCapacity;
+        }
+
+        if (!hasSellableCargo) {
+            const treeType = TREE_TYPES[type];
+            const fruitsPerCoin = treeType?.fruitsPerCoin || 0;
+            if (fruitsPerCoin > 0 && loaded >= fruitsPerCoin) {
+                hasSellableCargo = true;
+            }
+        }
+    });
+
+    if (fruitSummary.unlimited) {
+        fruitSummary.capacity = null;
+        fruitSummary.percent = 0;
+    } else {
+        fruitSummary.capacity = Math.max(0, fruitSummary.capacity);
+        fruitSummary.percent = fruitSummary.capacity > 0
+            ? Math.min(100, Math.round((fruitSummary.loaded / fruitSummary.capacity) * 100))
+            : 0;
+    }
+
+    const treeCrate = vehicle.treeCrate;
+    const treeSummary = treeCrate ? {
+        queued: treeCrate.totalTrees,
+        capacity: treeCrate.unlimited ? null : treeCrate.effectiveCapacity,
+        availableSlots: treeCrate.unlimited ? null : treeCrate.availableSlots,
+        unlimited: treeCrate.unlimited
+    } : { queued: 0, capacity: 0, availableSlots: 0, unlimited: false };
+
+    return {
+        mode: vehicle.mode,
+        location: vehicle.location,
+        fruit: fruitSummary,
+        tree: treeSummary,
+        canSell: !vehicle.isTraveling() && vehicle.location === 'city' && hasSellableCargo
+    };
+}
+
 function cleanupResourceMap(map = {}) {
     Object.keys(map).forEach((key) => {
         if (!map[key] || map[key] <= 0) {
@@ -362,6 +439,39 @@ function buildPlantingSummary(progress = {}) {
         size: GARDEN_SIZE
     });
     return planner.getPlantingSummary();
+}
+
+function collectQueuedTreeCounts(progress = {}) {
+    const counts = {};
+    const merge = (queued) => {
+        if (!queued) {
+            return;
+        }
+        Object.entries(queued).forEach(([type, amount]) => {
+            const normalizedType = normalizeTreeType(type);
+            const value = Math.max(0, Number(amount) || 0);
+            if (!normalizedType || value <= 0) {
+                return;
+            }
+            counts[normalizedType] = (counts[normalizedType] || 0) + value;
+        });
+    };
+
+    merge(progress.transport?.truck?.treeCrate?.queued);
+    merge(progress.transport?.helicopter?.treeCrate?.queued);
+    merge(progress.crates?.tree?.queued);
+    merge(progress.treeCrate?.queued);
+
+    return counts;
+}
+
+function getQueuedTreeCount(progress = {}, treeType) {
+    const normalized = normalizeTreeType(treeType);
+    if (!normalized) {
+        return 0;
+    }
+    const counts = collectQueuedTreeCounts(progress);
+    return counts[normalized] || 0;
 }
 
 function buildTreeView(tree, now = new Date()) {
@@ -466,10 +576,24 @@ function buildGamePayload(progress = {}, options = {}) {
 
     const activeVehicle = fleet.getActiveVehicle();
     const activeVehicleState = serializeVehicleState(activeVehicle, now) || {};
+    const transportMetrics = buildVehicleTransportMetrics(activeVehicle);
     const truckInventory = sanitizeInventoryPayload(activeVehicleState.cargo || {});
     const fruitCrates = activeVehicleState.fruitCrates || {};
     const treeCrate = activeVehicleState.treeCrate || { capacity: 0, queued: {} };
     const plantingSummary = buildPlantingSummary(progress);
+    const aggregatedQueuedByType = collectQueuedTreeCounts(progress);
+    const treeCrateSummary = {
+        queued: transportMetrics.tree.queued,
+        availableSlots: transportMetrics.tree.availableSlots,
+        capacity: transportMetrics.tree.capacity,
+        unlimited: transportMetrics.tree.unlimited,
+        queuedByType: { ...(treeCrate.queued || {}) },
+        globalQueuedByType: aggregatedQueuedByType,
+        vehicleCapacity: {
+            truck: VEHICLE_PRESETS.truck?.treeCapacity ?? 5,
+            helicopter: VEHICLE_PRESETS.helicopter?.treeCapacity ?? 0
+        }
+    };
 
     const truck = {
         location: activeVehicleState.location || 'farm',
@@ -494,8 +618,12 @@ function buildGamePayload(progress = {}, options = {}) {
         truckDepartureTime: truck.departureTime,
         fruitCrates,
         treeCrate,
+        treeCrateSummary,
         plantingSummary,
         transport: transportPayload,
+        transportMetrics,
+        canSellFruits: transportMetrics.canSell,
+        gardenManagementEnabled: GARDEN_MANAGEMENT_ENABLED,
         timers: getTimingConfig(activeTravelSeconds),
         treeTypes: TREE_TYPES,
         upgrades: {
@@ -693,9 +821,17 @@ router.get('/status/:username', async (req, res) => {
 // Buy tree
 router.post('/buy_tree', async (req, res) => {
     try {
-        const { username, cellIndex, queueOnly, vehicle: requestedVehicle } = req.body;
+        const { username, cellIndex, queueOnly, vehicle: requestedVehicle, treeType } = req.body;
         const queueOnlyMode = Boolean(queueOnly);
         const targetCell = Number(cellIndex);
+        const requestedType = typeof treeType === 'string' ? treeType : 'banana';
+        const normalizedType = normalizeTreeType(requestedType) || 'banana';
+
+        if (!TREE_TYPES[normalizedType]) {
+            return res.status(400).json({ error: 'Tree type unavailable.' });
+        }
+
+        const treeConfig = TREE_TYPES[normalizedType];
 
         if (!queueOnlyMode) {
             if (!Number.isInteger(targetCell) || targetCell < 0 || targetCell >= GARDEN_SIZE) {
@@ -713,6 +849,20 @@ router.post('/buy_tree', async (req, res) => {
             return res.status(400).json({ error: 'Rich Garden data not initialized' });
         }
 
+        const plantingSummary = buildPlantingSummary(rgData);
+        if (!plantingSummary?.[normalizedType]?.canPlant) {
+            return res.status(400).json({ error: 'Garden already full of equal or higher-tier trees.' });
+        }
+
+        const availableTargets = Array.isArray(plantingSummary?.[normalizedType]?.targets)
+            ? plantingSummary[normalizedType].targets.length
+            : 0;
+        const queuedCounts = collectQueuedTreeCounts(rgData);
+        const queuedForType = queuedCounts[normalizedType] || 0;
+        if (availableTargets - queuedForType <= 0) {
+            return res.status(400).json({ error: 'All matching slots are already reserved by staged saplings. Plant or upgrade existing trees first.' });
+        }
+
         const now = new Date();
         const transportContext = ensureTransportState(user, { now });
         const selection = getVehicleContext(transportContext.fleet, requestedVehicle);
@@ -726,8 +876,7 @@ router.post('/buy_tree', async (req, res) => {
             return res.status(400).json({ error: 'Selected vehicle is currently traveling' });
         }
 
-        const plantedTrees = rgData.garden.filter(tree => tree !== null).length;
-        if (plantedTrees > 0 && vehicle.location !== 'city') {
+        if (!vehicleAtLocation(vehicle, 'city')) {
             return res.status(400).json({ error: 'Vehicle must be at the city to buy trees' });
         }
 
@@ -743,13 +892,24 @@ router.post('/buy_tree', async (req, res) => {
             }
         }
 
-        if (rgData.coins < TREE_TYPES.banana.cost) {
+        const treeCrate = vehicle.treeCrate;
+        if (!treeCrate) {
+            return res.status(400).json({ error: 'Tree crate is unavailable on this vehicle' });
+        }
+
+        if (!treeCrate.unlimited && treeCrate.availableSlots <= 0) {
+            return res.status(400).json({ error: 'Tree crate is full. Deliver trees before buying more.' });
+        }
+
+        if (rgData.coins < treeConfig.cost) {
             return res.status(400).json({ error: 'Not enough coins' });
         }
 
-        const treeCrate = vehicle.treeCrate;
-        treeCrate.queueTrees('banana', 1);
-        rgData.coins -= TREE_TYPES.banana.cost;
+        const queued = treeCrate.queueTrees(normalizedType, 1);
+        if (queued <= 0) {
+            return res.status(400).json({ error: 'Tree crate is full. Deliver trees before buying more.' });
+        }
+        rgData.coins -= treeConfig.cost;
 
         persistTransportFleet(rgData, transportContext.fleet);
 
@@ -758,7 +918,7 @@ router.post('/buy_tree', async (req, res) => {
 
         return res.json(buildUserGardenResponse(user, {
             now,
-            extras: { treeCrateQueued: true, vehicle: mode },
+            extras: { treeCrateQueued: true, vehicle: mode, treeType: normalizedType },
             transportContext
         }));
 
@@ -940,6 +1100,99 @@ router.post('/collect_tree', async (req, res) => {
 
     } catch (error) {
         console.error('Collect tree error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Collect all ready trees (optionally limited to provided cells)
+router.post('/collect_ready', async (req, res) => {
+    try {
+        const { username, cells } = req.body || {};
+
+        const user = await User.findOne({ username });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const rgData = user.richGardenProgress;
+        if (!rgData) {
+            return res.status(400).json({ error: 'Rich Garden data not initialized' });
+        }
+
+        const now = new Date();
+        const autoCollect = hasGardenAutoCollect(user);
+        const syncResult = synchronizeGardenState(rgData, now, { autoCollect });
+        const farmInventory = ensureFarmInventory(rgData);
+        const fruitsAdded = { ...syncResult.collected };
+
+        const requestedCells = Array.isArray(cells)
+            ? cells
+                .map(index => Number(index))
+                .filter(index => Number.isInteger(index) && index >= 0 && index < GARDEN_SIZE)
+            : null;
+
+        const targetIndices = requestedCells && requestedCells.length > 0
+            ? Array.from(new Set(requestedCells))
+            : rgData.garden.reduce((acc, tree, index) => {
+                if (tree && tree.state === 'ready') {
+                    acc.push(index);
+                }
+                return acc;
+            }, []);
+
+        if (targetIndices.length === 0) {
+            return res.status(400).json({ error: 'No trees ready for collection' });
+        }
+
+        let harvestedAny = false;
+
+        targetIndices.forEach((cellIndex) => {
+            const tree = rgData.garden[cellIndex];
+            if (!tree || tree.state !== 'ready') {
+                return;
+            }
+
+            const normalizedType = normalizeTreeType(tree.type);
+            if (!normalizedType) {
+                return;
+            }
+
+            const treeConfig = TREE_TYPES[normalizedType];
+            if (!treeConfig) {
+                return;
+            }
+
+            const harvested = harvestTreeToFarmInventory({
+                progress: rgData,
+                tree,
+                typeKey: normalizedType,
+                treeConfig,
+                farmInventory,
+                collectedSummary: fruitsAdded,
+                now
+            });
+
+            if (harvested > 0) {
+                harvestedAny = true;
+            }
+        });
+
+        if (!harvestedAny) {
+            return res.status(400).json({ error: 'No trees ready for collection' });
+        }
+
+        user.markModified('richGardenProgress');
+        await user.save();
+
+        const extras = {};
+        if (Object.keys(fruitsAdded).length > 0) {
+            extras.collected = fruitsAdded;
+        }
+
+        return res.json(buildUserGardenResponse(user, { now, extras }));
+
+    } catch (error) {
+        console.error('Collect ready trees error:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });

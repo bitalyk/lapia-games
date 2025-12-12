@@ -10,11 +10,17 @@ export default class RichGardenGame {
         this.truckInventory = {}; // Fruits currently loaded on truck
         this.fruitCrates = {}; // Serialized crate data from backend
         this.treeCrate = { capacity: 0, queued: {} };
+        this.treeCrateSummary = null;
+        this.totalQueuedByType = {};
+        this.treeCrateVehicleLimits = { truck: 5, helicopter: 25 };
+        this.transportMetrics = null;
         this.plantingSummary = {};
         this.upgrades = {};
         this.transport = { activeMode: 'truck', truck: null, helicopter: null };
         this.activeVehicle = 'truck';
+        this.gardenManagementEnabled = true;
         this.modalElements = null;
+        this.boundTreeShopHandler = null;
         this.gameManager = null;
         this.gameLoopInterval = null;
         this.statusRefreshInterval = null;
@@ -176,11 +182,32 @@ export default class RichGardenGame {
                             </div>
                             <div id="rg-crate-status" class="inventory-grid"></div>
                         </div>
-                        <div class="transport-card">
-                            <div class="transport-card__title">
-                                <h4>Tree Crate Queue</h4>
-                                <span id="rg-tree-note" class="transport-note"></span>
+                        <div class="transport-card tree-crate-panel">
+                            <div class="tree-crate-panel__heading">
+                                <div>
+                                    <h4>Tree Crate</h4>
+                                    <p class="transport-note">Manage staged saplings for each vehicle.</p>
+                                </div>
+                                <div class="tree-crate-panel__capacity">
+                                    <span>Active Slots</span>
+                                    <strong id="rg-tree-active-capacity">0 / 0</strong>
+                                </div>
                             </div>
+                            <div class="tree-crate-meta">
+                                <div>
+                                    <span>Slots Open</span>
+                                    <strong id="rg-tree-open-slots">0</strong>
+                                </div>
+                                <div>
+                                    <span>Truck Capacity</span>
+                                    <strong id="rg-tree-limit-truck">5 trees</strong>
+                                </div>
+                                <div>
+                                    <span>Helicopter Capacity</span>
+                                    <strong id="rg-tree-limit-helicopter">25 trees</strong>
+                                </div>
+                            </div>
+                            <p id="rg-tree-note" class="transport-note">No trees staged</p>
                             <div id="rg-tree-crate" class="tree-crate-grid"></div>
                         </div>
                     </div>
@@ -195,7 +222,7 @@ export default class RichGardenGame {
                 </div>
 
                 <!-- Garden Management -->
-                <section class="garden-management-panel">
+                <section id="rg-garden-management" class="garden-management-panel">
                     <div class="panel-header">
                         <div>
                             <p class="panel-kicker">Agronomy</p>
@@ -234,14 +261,6 @@ export default class RichGardenGame {
                     </div>
                 </div>
 
-                <!-- Vehicle Cargo -->
-                <div class="inventory-section">
-                    <h3>Vehicle Cargo</h3>
-                    <div id="rg-truck-inventory" class="inventory-grid">
-                        <!-- Loaded fruits -->
-                    </div>
-                </div>
-
                 <!-- Controls -->
                 <div class="game-controls">
                     <button id="rg-collect-all-btn" class="control-btn collect">Collect All Ready</button>
@@ -249,6 +268,7 @@ export default class RichGardenGame {
                     <button id="rg-send-truck-btn" class="control-btn truck">Send Vehicle to City</button>
                     <button id="rg-sell-fruits-btn" class="control-btn sell">Sell Fruits</button>
                     <button id="rg-return-truck-btn" class="control-btn truck">Return Vehicle</button>
+                    <button id="rg-open-tree-shop-btn" class="control-btn shop">Buy Trees</button>
                 </div>
 
                 <!-- Messages -->
@@ -259,7 +279,6 @@ export default class RichGardenGame {
         this.gameContainer = gameArea.querySelector('.rich-garden-game');
         this.renderGardenGrid();
         this.renderInventory();
-        this.renderTruckInventory();
         this.renderCrateStatus();
         this.renderTreeCrate();
         this.renderPlantingAvailability();
@@ -395,6 +414,19 @@ export default class RichGardenGame {
             this.treeCrate = { capacity: 0, queued: {} };
         }
 
+        if (data.treeCrateSummary?.vehicleCapacity) {
+            this.treeCrateVehicleLimits = {
+                truck: data.treeCrateSummary.vehicleCapacity.truck ?? this.treeCrateVehicleLimits.truck,
+                helicopter: data.treeCrateSummary.vehicleCapacity.helicopter ?? this.treeCrateVehicleLimits.helicopter
+            };
+        }
+        this.refreshTreeCrateSummary();
+        if (data.treeCrateSummary?.globalQueuedByType) {
+            this.totalQueuedByType = this.cloneResourceMap(data.treeCrateSummary.globalQueuedByType);
+        } else {
+            this.totalQueuedByType = this.cloneResourceMap(this.treeCrateSummary?.queuedByType || {});
+        }
+
         if (data.plantingSummary && typeof data.plantingSummary === 'object') {
             this.plantingSummary = {};
             Object.entries(data.plantingSummary).forEach(([type, summary]) => {
@@ -479,18 +511,28 @@ export default class RichGardenGame {
             });
         }
 
+        this.transportMetrics = this.cloneTransportMetrics(data.transportMetrics) || null;
+
         const preferredVehicle = this.resolvePreferredVehicleMode();
-        const applied = this.applyVehicleState(preferredVehicle);
+        const applied = this.applyVehicleState(preferredVehicle, { preserveMetrics: Boolean(this.transportMetrics) });
         if (!applied && preferredVehicle === 'helicopter') {
             this.activeVehicle = 'truck';
-            this.applyVehicleState('truck');
+            this.applyVehicleState('truck', { preserveMetrics: Boolean(this.transportMetrics) });
         } else {
             this.activeVehicle = preferredVehicle;
+        }
+
+        if (!this.transportMetrics) {
+            this.transportMetrics = this.buildLocalTransportMetrics();
         }
 
         if (this.truckStatus) {
             this.truckLocation = this.truckStatus.location || this.truckLocation || 'farm';
             this.truckDepartureTime = this.truckStatus.departureTime;
+        }
+
+        if (typeof data.gardenManagementEnabled === 'boolean') {
+            this.gardenManagementEnabled = data.gardenManagementEnabled;
         }
     }
 
@@ -570,13 +612,7 @@ export default class RichGardenGame {
         const gardenGrid = document.getElementById('rg-garden-grid');
         if (gardenGrid) {
             gardenGrid.addEventListener('click', (e) => {
-                if (e.target.classList.contains('rg-buy-tree-btn')) {
-                    const cellIndex = parseInt(e.target.dataset.cell, 10);
-                    this.promptTreePurchase(cellIndex);
-                } else if (e.target.classList.contains('rg-upgrade-tree-btn')) {
-                    const cellIndex = parseInt(e.target.dataset.cell, 10);
-                    this.promptTreeUpgrade(cellIndex);
-                } else if (e.target.classList.contains('rg-collect-tree-btn')) {
+                if (e.target.classList.contains('rg-collect-tree-btn')) {
                     const cellIndex = parseInt(e.target.dataset.cell, 10);
                     this.collectTree(cellIndex);
                 } else if (e.target.classList.contains('rg-plant-from-crate-btn')) {
@@ -601,6 +637,14 @@ export default class RichGardenGame {
                 this.handleVehicleSelect(vehicle);
             });
         }
+
+        const openTreeShopBtn = document.getElementById('rg-open-tree-shop-btn');
+        if (openTreeShopBtn) {
+            openTreeShopBtn.addEventListener('click', () => {
+                this.openTreePurchaseModal();
+            });
+        }
+
     }
 
     // Game loop for updating timers
@@ -682,27 +726,28 @@ export default class RichGardenGame {
                     </div>
                     <div class="tree-actions">
                         ${tree.phase === 'ready' ? `<button class="rg-collect-tree-btn" data-cell="${i}">Collect</button>` : ''}
-                        ${this.canUpgradeTree(i) ? `<button class="rg-upgrade-tree-btn" data-cell="${i}">Upgrade</button>` : ''}
                     </div>
                 `;
             } else {
-                const canBuy = this.canBuyTree(i);
+                const unlocked = true;
                 cell.innerHTML = `
                     <div class="empty-cell">
-                        ${canBuy ? `<button class="rg-buy-tree-btn" data-cell="${i}">Buy Tree</button>` : 'Empty'}
+                        ${unlocked ? 'Slot available — queue saplings in the city, then plant them from the crate.' : 'Empty plot'}
                     </div>
                 `;
             }
 
             const plantableTypes = this.getPlantableTypesForCell(i);
             if (plantableTypes.length > 0) {
-                const plantingButtons = plantableTypes.map(type => {
-                    const label = this.TREE_TYPES[type]?.name || type;
-                    return `<button class="rg-plant-from-crate-btn" data-cell="${i}" data-type="${type}">Plant ${label}</button>`;
-                }).join('');
+                const nextType = plantableTypes[0];
+                const label = this.TREE_TYPES[nextType]?.name || nextType;
                 const plantingWrap = document.createElement('div');
                 plantingWrap.className = 'planting-actions';
-                plantingWrap.innerHTML = plantingButtons;
+                plantingWrap.innerHTML = `
+                    <button class="rg-plant-from-crate-btn" data-cell="${i}" data-type="${nextType}">
+                        Plant ${label}
+                    </button>
+                `;
                 cell.appendChild(plantingWrap);
             }
 
@@ -741,40 +786,6 @@ export default class RichGardenGame {
 
         if (!hasFruits) {
             inventoryEl.innerHTML = '<div class="empty-inventory">No fruits in inventory</div>';
-        }
-    }
-
-    // Render truck inventory
-    renderTruckInventory() {
-        const inventoryEl = document.getElementById('rg-truck-inventory');
-        if (!inventoryEl) return;
-
-        inventoryEl.innerHTML = '';
-
-        let hasCargo = false;
-        Object.entries(this.truckInventory || {}).forEach(([type, amountRaw]) => {
-            const amount = Number(amountRaw) || 0;
-            if (amount > 0) {
-                hasCargo = true;
-                const treeType = this.TREE_TYPES[type] || { name: type, fruitsPerCoin: 1 };
-                const value = Math.floor(amount / (treeType.fruitsPerCoin || 1));
-
-                const cargoCard = document.createElement('div');
-                cargoCard.className = 'fruit-card';
-                cargoCard.innerHTML = `
-                    <h4>${treeType.name} Fruits</h4>
-                    <div class="fruit-stats">
-                        <div>Loaded: ${amount}</div>
-                        <div>Value: ${value} coins</div>
-                    </div>
-                `;
-
-                inventoryEl.appendChild(cargoCard);
-            }
-        });
-
-        if (!hasCargo) {
-            inventoryEl.innerHTML = '<div class="empty-inventory">Vehicle is empty</div>';
         }
     }
 
@@ -825,45 +836,79 @@ export default class RichGardenGame {
         });
     }
 
+    updateTreeCrateMeta(summary = this.treeCrateSummary) {
+        if (!summary) {
+            return;
+        }
+        const activeCap = document.getElementById('rg-tree-active-capacity');
+        if (activeCap) {
+            if (summary.unlimited) {
+                activeCap.textContent = `${summary.queued.toLocaleString()} staged`;
+            } else if (typeof summary.capacity === 'number') {
+                activeCap.textContent = `${summary.queued} / ${summary.capacity}`;
+            } else {
+                activeCap.textContent = `${summary.queued} staged`;
+            }
+        }
+        const openSlots = document.getElementById('rg-tree-open-slots');
+        if (openSlots) {
+            openSlots.textContent = summary.unlimited
+                ? '∞'
+                : `${Math.max(0, summary.availableSlots || 0)}`;
+        }
+        const noteEl = document.getElementById('rg-tree-note');
+        if (noteEl) {
+            noteEl.textContent = summary.unlimited
+                ? 'Unlimited tree crate active'
+                : `${Math.max(0, summary.availableSlots || 0)} slot(s) open on this vehicle`;
+        }
+        const truckLimitEl = document.getElementById('rg-tree-limit-truck');
+        if (truckLimitEl) {
+            const truckCap = summary.vehicleCapacity?.truck ?? this.treeCrateVehicleLimits.truck;
+            truckLimitEl.textContent = `${truckCap} trees`;
+        }
+        const heliLimitEl = document.getElementById('rg-tree-limit-helicopter');
+        if (heliLimitEl) {
+            const heliCap = summary.vehicleCapacity?.helicopter ?? this.treeCrateVehicleLimits.helicopter;
+            heliLimitEl.textContent = `${heliCap} trees`;
+        }
+    }
+
     renderTreeCrate() {
         const treeCrateEl = document.getElementById('rg-tree-crate');
         if (!treeCrateEl) return;
 
-        const queued = this.treeCrate?.queued || {};
-        const totalQueued = Object.values(queued).reduce((sum, countRaw) => sum + (Number(countRaw) || 0), 0);
-        const capacity = Number(this.treeCrate?.capacity) || 0;
-        const unlimited = Boolean(this.treeCrate?.unlimited);
+        const summary = this.treeCrateSummary || this.refreshTreeCrateSummary();
+        this.updateTreeCrateMeta(summary);
 
-        if (totalQueued === 0) {
+        const queuedEntries = Object.entries(summary.queuedByType || {}).filter(([, countRaw]) => (Number(countRaw) || 0) > 0);
+
+        if (queuedEntries.length === 0) {
             treeCrateEl.innerHTML = '<div class="empty-inventory">No trees staged in the crate</div>';
             return;
         }
 
-        treeCrateEl.innerHTML = '';
-
-        Object.entries(queued).forEach(([type, countRaw]) => {
+        treeCrateEl.innerHTML = queuedEntries.map(([type, countRaw]) => {
             const count = Number(countRaw) || 0;
-            if (count <= 0) {
-                return;
-            }
             const treeConfig = this.TREE_TYPES[type] || { name: type };
-            const summary = this.plantingSummary?.[type];
-            const targetCount = Array.isArray(summary?.targets) ? summary.targets.length : 0;
-            const canPlant = Boolean(summary?.canPlant && targetCount > 0);
-            const card = document.createElement('div');
-            card.className = `tree-crate-card ${canPlant ? 'plantable' : 'blocked'}`;
-
-            const plantStatus = canPlant ? 'Ready to plant' : 'Waiting for slot';
-
-            card.innerHTML = `
-                <h4>${treeConfig.name}</h4>
-                <div class="tree-crate-count">Queued: ${count}</div>
-                <div class="tree-crate-capacity">Crate: ${unlimited ? 'Unlimited' : `${totalQueued}/${capacity}`}</div>
-                <div class="tree-crate-slot">Slots: ${plantStatus}</div>
+            const planter = this.plantingSummary?.[type];
+            const targetCount = Array.isArray(planter?.targets) ? planter.targets.length : 0;
+            const canPlant = Boolean(planter?.canPlant && targetCount > 0);
+            const plantStatus = canPlant
+                ? `Ready for ${targetCount} plot${targetCount === 1 ? '' : 's'}`
+                : 'Waiting for slots';
+            const capacityNote = summary.unlimited
+                ? 'Unlimited crate capacity'
+                : `${Math.max(0, summary.availableSlots || 0)} slot(s) open`;
+            return `
+                <div class="tree-crate-card ${canPlant ? 'plantable' : 'blocked'}">
+                    <h4>${treeConfig.name}</h4>
+                    <div class="tree-crate-count">Queued: ${count}</div>
+                    <div class="tree-crate-slot">${plantStatus}</div>
+                    <div class="tree-crate-capacity">${capacityNote}</div>
+                </div>
             `;
-
-            treeCrateEl.appendChild(card);
-        });
+        }).join('');
     }
 
     renderPlantingAvailability() {
@@ -971,8 +1016,15 @@ export default class RichGardenGame {
                     : 'N/A';
 
                 const farmInventoryTotal = this.getTotalResources(this.inventory);
-                const truckCargoTotal = this.getTotalResources(this.truckInventory);
-                const crateMetrics = this.getCrateLoadMetrics();
+                const crateMetrics = this.transportMetrics?.fruit || this.getCrateLoadMetrics();
+                const treeSummary = this.treeCrateSummary || this.refreshTreeCrateSummary();
+                const crateLabel = crateMetrics.unlimited ? '∞' : `${crateMetrics.percent}%`;
+                const crateDetail = crateMetrics.unlimited
+                    ? 'Unlimited crate upgrade active'
+                    : `${crateMetrics.loaded.toLocaleString()} / ${(crateMetrics.capacity || 0).toLocaleString()} fruits loaded`;
+                const treeDetail = treeSummary.unlimited
+                    ? 'Unlimited sapling slots'
+                    : `${treeSummary.queued} queued, ${Math.max(0, treeSummary.availableSlots || 0)} open`;
 
                 container.innerHTML = `
                     <div class="production-card">
@@ -991,20 +1043,26 @@ export default class RichGardenGame {
                         <small>Fruits staged at farm</small>
                     </div>
                     <div class="production-card">
-                        <p>Vehicle Cargo</p>
-                        <strong>${truckCargoTotal.toLocaleString()}</strong>
-                        <small>Loaded for the next trip</small>
+                        <p>Crate Load</p>
+                        <strong>${crateLabel}</strong>
+                        <small>${crateDetail}</small>
                     </div>
                     <div class="production-card">
-                        <p>Crate Load</p>
-                        <strong>${crateMetrics.unlimited ? '∞' : `${crateMetrics.percent}%`}</strong>
-                        <small>${crateMetrics.unlimited ? 'Unlimited capacity active' : 'Of total crate space'}</small>
+                        <p>Tree Crate Slots</p>
+                        <strong>${treeSummary.unlimited ? '∞' : `${treeSummary.queued} staged`}</strong>
+                        <small>${treeDetail}</small>
                     </div>
                 `;
             }
 
             updateTransportPanel() {
                 this.updateVehicleToggle();
+
+                const metrics = this.transportMetrics || this.buildLocalTransportMetrics();
+                const crateMetrics = metrics.fruit || { loaded: 0, capacity: 0, percent: 0, unlimited: false };
+                const treeSummary = this.treeCrateSummary || this.refreshTreeCrateSummary();
+                metrics.canSell = this.computeCanSellFromState();
+                this.transportMetrics = metrics;
 
                 const statusText = {
                     farm: 'At Farm',
@@ -1049,8 +1107,6 @@ export default class RichGardenGame {
                 if (progressLabel) {
                     progressLabel.textContent = travelLabel;
                 }
-
-                const crateMetrics = this.getCrateLoadMetrics();
                 const crateChip = document.getElementById('rg-crate-load-chip');
                 if (crateChip) {
                     crateChip.textContent = crateMetrics.unlimited ? '∞' : `${crateMetrics.percent}%`;
@@ -1059,22 +1115,17 @@ export default class RichGardenGame {
                 if (crateNote) {
                     crateNote.textContent = crateMetrics.unlimited
                         ? 'Unlimited crate upgrade active'
-                        : `${crateMetrics.loaded.toLocaleString()} / ${crateMetrics.capacity.toLocaleString()} fruits loaded`;
+                        : `${crateMetrics.loaded.toLocaleString()} / ${(crateMetrics.capacity || 0).toLocaleString()} fruits loaded`;
                 }
 
-                const treeMetrics = this.getTreeCrateMetrics();
                 const treeChip = document.getElementById('rg-tree-crate-chip');
                 if (treeChip) {
-                    treeChip.textContent = treeMetrics.unlimited
-                        ? `${treeMetrics.queued.toLocaleString()} staged`
-                        : `${treeMetrics.queued} / ${treeMetrics.capacity}`;
+                    treeChip.textContent = treeSummary.unlimited
+                        ? `${treeSummary.queued.toLocaleString()} staged`
+                        : `${treeSummary.queued} / ${(treeSummary.capacity || 0)}`;
                 }
-                const treeNote = document.getElementById('rg-tree-note');
-                if (treeNote) {
-                    treeNote.textContent = treeMetrics.unlimited
-                        ? 'Unlimited tree crate active'
-                        : `${Math.max(0, treeMetrics.capacity - treeMetrics.queued)} slots open`;
-                }
+
+                this.updateTreeCrateMeta(treeSummary);
             }
 
             updateVehicleToggle() {
@@ -1222,6 +1273,35 @@ export default class RichGardenGame {
                 document.addEventListener('keydown', this.handleModalKeydown);
             }
 
+            bindTreeShopEvents() {
+                if (!this.modalElements?.body) {
+                    return;
+                }
+
+                if (this.boundTreeShopHandler) {
+                    this.modalElements.body.removeEventListener('click', this.boundTreeShopHandler);
+                }
+
+                this.boundTreeShopHandler = (event) => {
+                    const button = event.target.closest('[data-tree-purchase]');
+                    if (!button) {
+                        return;
+                    }
+                    if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+                        return;
+                    }
+                    const treeType = button.dataset.treePurchase;
+                    if (!treeType) {
+                        return;
+                    }
+                    event.preventDefault();
+                    this.closeShopModal();
+                    this.buyTree(treeType);
+                };
+
+                this.modalElements.body.addEventListener('click', this.boundTreeShopHandler);
+            }
+
             closeShopModal() {
                 if (!this.modalElements) {
                     return;
@@ -1231,6 +1311,10 @@ export default class RichGardenGame {
                 overlay.setAttribute('aria-hidden', 'true');
                 document.body.classList.remove('rg-modal-open');
                 document.removeEventListener('keydown', this.handleModalKeydown);
+                if (this.boundTreeShopHandler && body) {
+                    body.removeEventListener('click', this.boundTreeShopHandler);
+                    this.boundTreeShopHandler = null;
+                }
                 if (body) {
                     body.innerHTML = '';
                 }
@@ -1239,136 +1323,136 @@ export default class RichGardenGame {
                 }
             }
 
-            promptTreePurchase(cellIndex) {
-                if (!this.canBuyTree(cellIndex)) {
-                    this.showGameMessage('Cannot buy tree here yet!', 'error');
-                    return;
-                }
-
-                const baseTree = this.TREE_TYPES.banana;
-                if (!baseTree) {
+            openTreePurchaseModal() {
+                const treeEntries = Object.entries(this.TREE_TYPES || {});
+                if (treeEntries.length === 0) {
                     this.showGameMessage('Tree configuration missing. Please refresh.', 'error');
                     return;
                 }
-                const planter = this.plantingSummary?.banana || {};
-                const crateMetrics = this.getTreeCrateMetrics();
-                const queuedForTier = Number(this.treeCrate?.queued?.banana) || 0;
-                const targets = Array.isArray(planter.targets) ? planter.targets : [];
-                const preferredTarget = targets.includes(cellIndex) ? cellIndex : targets[0];
-                const targetPreview = typeof preferredTarget === 'number'
-                    ? `Recommended plot: #${preferredTarget + 1}`
-                    : 'No planting slots available right now';
-                const slotsOpen = crateMetrics.unlimited
-                    ? 'Unlimited capacity active'
-                    : `${Math.max(0, crateMetrics.capacity - crateMetrics.queued)} slots open`;
+
+                const summary = this.treeCrateSummary || this.refreshTreeCrateSummary();
+                const generalBlockers = this.getTreeShopBlockers(summary);
+                const openSlots = this.getOpenGardenSlots();
+                const vehicleLabel = this.getActiveVehicleLabel();
+                const capacityLabel = summary?.unlimited
+                    ? 'Unlimited tree crate active'
+                    : `${Math.max(0, summary?.availableSlots ?? 0)} slot(s) open`;
+                const slotLabel = `${openSlots} of ${GARDEN_SIZE} garden plots currently empty`;
+                const statusClass = generalBlockers.length ? 'is-blocked' : 'is-ready';
+                const statusDetail = generalBlockers.length
+                    ? `<ul class="rg-shop-status-list">${generalBlockers.map((reason) => `<li>${reason}</li>`).join('')}</ul>`
+                    : `<p>${vehicleLabel} is waiting in the city with room in the tree crate.</p>`;
+                const locationNote = this.truckLocation === 'city'
+                    ? `${vehicleLabel} is in the city — saplings load into the crate immediately and wait until you return to the farm.`
+                    : `Drive the ${vehicleLabel.toLowerCase()} to the city before loading saplings into the crate.`;
+
+                const tierCards = treeEntries
+                    .sort(([, a], [, b]) => (a.level || 0) - (b.level || 0))
+                    .map(([key, config]) => {
+                        const plantedCount = this.garden.filter((tree) => tree && tree.type === key).length;
+                        const status = this.getTreePurchaseStatus(key, summary, generalBlockers);
+                        const queuedCount = status.queued;
+                        const targets = status.targets || [];
+                        const targetPreview = targets
+                            .slice(0, 3)
+                            .map((idx) => {
+                                const value = Number(idx);
+                                return Number.isFinite(value) ? `#${value + 1}` : null;
+                            })
+                            .filter(Boolean)
+                            .join(', ');
+                        const additionalTargets = targets.length > 3 ? ` +${targets.length - 3} more` : '';
+                        let plantingDetail = 'Ready to plant';
+                        if (status.canPlant) {
+                            if (targets.length > 0) {
+                                plantingDetail = `Upgrade ${targets.length} plot${targets.length === 1 ? '' : 's'}${targetPreview ? ` (${targetPreview}${additionalTargets})` : ''}`;
+                            } else if (openSlots > 0) {
+                                plantingDetail = `${openSlots} empty slot${openSlots === 1 ? '' : 's'} available`;
+                            }
+                        } else {
+                            plantingDetail = 'Garden already full of equal or higher-tier trees.';
+                        }
+
+                        const hintState = status.canPlant ? 'ready' : 'blocked';
+                        const reasonText = status.perTierBlockers[0] || status.generalBlockers[0] || '';
+                        const buttonLabel = status.allowed
+                            ? `Buy for ${config.cost.toLocaleString()} coins`
+                            : reasonText || 'Unavailable';
+                        const reasonMarkup = reasonText ? `<small class="rg-tier-reason">${reasonText}</small>` : '';
+
+                        return `
+                            <div class="rg-tier-card" data-state="${status.allowed ? 'available' : 'blocked'}" data-type="${key}">
+                                <div class="rg-tier-card__header">
+                                    <div>
+                                        <strong>${config.name}</strong>
+                                        <span class="rg-tier-level">Lvl ${config.level}</span>
+                                    </div>
+                                </div>
+                                <p>Cost: ${config.cost.toLocaleString()} coins</p>
+                                <p>Yield: ${config.fps} fruits / cycle</p>
+                                <p class="rg-tier-availability">In garden: ${plantedCount}</p>
+                                <p class="rg-tier-queue">Staged in crate: ${queuedCount}</p>
+                                <div class="rg-tier-hint" data-state="${hintState}">
+                                    <strong>${status.canPlant ? 'Planting ready' : 'Blocked'}</strong>
+                                    <p>${plantingDetail}</p>
+                                </div>
+                                ${reasonMarkup}
+                                <button
+                                    type="button"
+                                    class="rg-tier-buy-btn"
+                                    data-tree-purchase="${key}"
+                                    ${status.allowed ? '' : 'disabled aria-disabled="true"'}
+                                >
+                                    ${buttonLabel}
+                                </button>
+                            </div>
+                        `;
+                    })
+                    .join('');
+
+                const queuedTotal = summary?.queued ?? 0;
+                const statusLabel = generalBlockers.length ? 'Cannot load trees yet' : 'Ready to load trees';
 
                 const body = `
                     <div class="rg-modal-section">
-                        <h4>Purchase Details</h4>
+                        <h4>Vehicle Status</h4>
+                        <div class="rg-shop-status ${statusClass}">
+                            <strong>${statusLabel}</strong>
+                            ${statusDetail}
+                        </div>
                         <ul>
-                            <li>Cost: <strong>${baseTree.cost.toLocaleString()} coins</strong></li>
                             <li>Current coins: ${this.coins.toLocaleString()}</li>
-                            <li>${targetPreview}</li>
+                            <li>${capacityLabel}</li>
+                            <li>${slotLabel}</li>
                         </ul>
                     </div>
                     <div class="rg-modal-section">
-                        <h4>Tree Crate</h4>
-                        <p>Queued Banana Trees: <strong>${queuedForTier}</strong></p>
-                        <p>${slotsOpen}</p>
+                        <h4>Tree Availability</h4>
+                        <div class="rg-tier-list">
+                            ${tierCards}
+                        </div>
                     </div>
                     <div class="rg-modal-section">
-                        <h4>Farm Inventory</h4>
-                        <p>Total fruits staged: <strong>${this.getTotalResources(this.inventory).toLocaleString()}</strong></p>
-                        <p>Vehicle: ${this.truckLocation === 'farm' ? 'At farm (can plant immediately after purchase)' : 'In city (tree will wait in crate)'}</p>
+                        <h4>Logistics</h4>
+                        <p>Total saplings queued: <strong>${queuedTotal}</strong></p>
+                        <p>${locationNote}</p>
+                        <p>Reminder: Trees always enter the crate first and can only be planted from the farm.</p>
                     </div>
                 `;
 
                 this.openShopModal({
-                    title: 'Purchase New Tree',
+                    title: 'Tree Market',
                     body,
                     actions: [
                         {
-                            label: `Buy for ${baseTree.cost.toLocaleString()} coins`,
-                            variant: 'primary',
-                            handler: () => {
-                                this.closeShopModal();
-                                this.buyTree(cellIndex);
-                            }
-                        },
-                        {
-                            label: 'Cancel',
+                            label: 'Close',
                             variant: 'ghost',
                             handler: () => this.closeShopModal()
                         }
                     ]
                 });
-            }
 
-            promptTreeUpgrade(cellIndex) {
-                const tree = this.garden[cellIndex];
-                if (!tree) {
-                    this.showGameMessage('No tree in this slot to upgrade!', 'error');
-                    return;
-                }
-
-                if (!this.canUpgradeTree(cellIndex)) {
-                    this.showGameMessage('Upgrade requirements not met yet!', 'error');
-                    return;
-                }
-
-                const currentConfig = this.TREE_TYPES[tree.type];
-                if (!currentConfig) {
-                    this.showGameMessage('Tree configuration missing. Please refresh.', 'error');
-                    return;
-                }
-                const nextEntry = Object.entries(this.TREE_TYPES).find(([, config]) => config.level === currentConfig.level + 1);
-                if (!nextEntry) {
-                    this.showGameMessage('No further upgrades available.', 'info');
-                    return;
-                }
-                const [nextKey, nextConfig] = nextEntry;
-                const planter = this.plantingSummary?.[nextKey] || {};
-                const targets = Array.isArray(planter.targets) ? planter.targets : [];
-                const summaryText = targets.length > 0
-                    ? `Eligible plots: ${targets.map((idx) => `#${idx + 1}`).join(', ')}`
-                    : 'No replacement slots detected—upgrade will occur in-place';
-
-                const body = `
-                    <div class="rg-modal-section">
-                        <h4>Upgrade Preview</h4>
-                        <p>${currentConfig.name} → <strong>${nextConfig.name}</strong></p>
-                        <p>Cost: <strong>${nextConfig.cost.toLocaleString()} coins</strong></p>
-                        <p>Current coins: ${this.coins.toLocaleString()}</p>
-                        <p>${summaryText}</p>
-                    </div>
-                    <div class="rg-modal-section">
-                        <h4>Production Boost</h4>
-                        <ul>
-                            <li>Fruits / cycle: ${currentConfig.fps} → <strong>${nextConfig.fps}</strong></li>
-                            <li>Coin efficiency: 1 coin per ${currentConfig.fruitsPerCoin} fruits → ${nextConfig.fruitsPerCoin}</li>
-                        </ul>
-                    </div>
-                `;
-
-                this.openShopModal({
-                    title: `Upgrade Plot #${cellIndex + 1}`,
-                    body,
-                    actions: [
-                        {
-                            label: `Upgrade for ${nextConfig.cost.toLocaleString()} coins`,
-                            variant: 'primary',
-                            handler: () => {
-                                this.closeShopModal();
-                                this.upgradeTree(cellIndex);
-                            }
-                        },
-                        {
-                            label: 'Cancel',
-                            variant: 'ghost',
-                            handler: () => this.closeShopModal()
-                        }
-                    ]
-                });
+                this.bindTreeShopEvents();
             }
 
     // Update UI
@@ -1410,26 +1494,51 @@ export default class RichGardenGame {
 
         this.renderGardenGrid();
         this.renderInventory();
-        this.renderTruckInventory();
         this.renderCrateStatus();
         this.renderTreeCrate();
         this.renderPlantingAvailability();
+        this.renderGardenComposition();
+        this.renderProductionStatus();
+        this.updateTransportPanel();
+        this.toggleGardenManagementPanel();
 
         const loadBtn = document.getElementById('rg-load-truck-btn');
         const sendBtn = document.getElementById('rg-send-truck-btn');
         const sellBtn = document.getElementById('rg-sell-fruits-btn');
         const returnBtn = document.getElementById('rg-return-truck-btn');
+        const shopBtn = document.getElementById('rg-open-tree-shop-btn');
 
         const isTraveling = Boolean(this.truckStatus?.isTraveling);
         const atFarm = !isTraveling && this.truckLocation === 'farm';
         const atCity = !isTraveling && this.truckLocation === 'city';
         const hasFarmFruits = this.getTotalResources(this.inventory) > 0;
-        const hasCargo = this.getTotalResources(this.truckInventory) > 0;
+        const backendSellFlag = typeof this.transportMetrics?.canSell === 'boolean'
+            ? this.transportMetrics.canSell
+            : null;
+        const canSell = (backendSellFlag === true) || this.computeCanSellFromState();
+        const canPurchaseTrees = this.canOpenTreeShop();
 
         if (loadBtn) loadBtn.disabled = !atFarm || !hasFarmFruits;
         if (sendBtn) sendBtn.disabled = !atFarm;
-        if (sellBtn) sellBtn.disabled = !atCity || !hasCargo;
+        if (sellBtn) {
+            sellBtn.disabled = !canSell;
+            sellBtn.classList.toggle('is-disabled', !canSell);
+            sellBtn.setAttribute('aria-disabled', canSell ? 'false' : 'true');
+        }
         if (returnBtn) returnBtn.disabled = !atCity;
+        if (shopBtn) {
+            shopBtn.disabled = false;
+            shopBtn.classList.toggle('is-hint', !canPurchaseTrees);
+            shopBtn.setAttribute('aria-disabled', canPurchaseTrees ? 'false' : 'true');
+        }
+    }
+
+    toggleGardenManagementPanel() {
+        const panel = document.getElementById('rg-garden-management');
+        if (!panel) {
+            return;
+        }
+        panel.classList.toggle('is-hidden', !this.gardenManagementEnabled);
     }
 
     // Helper methods
@@ -1509,6 +1618,96 @@ export default class RichGardenGame {
         };
     }
 
+    summarizeTreeCrate() {
+        const queuedByType = this.cloneResourceMap(this.treeCrate?.queued || {});
+        const queued = Object.values(queuedByType).reduce((sum, value) => sum + (Number(value) || 0), 0);
+        const unlimited = Boolean(this.treeCrate?.unlimited);
+        const capacity = unlimited ? null : Math.max(0, Number(this.treeCrate?.capacity) || 0);
+        const availableSlots = unlimited ? null : Math.max(0, (capacity || 0) - queued);
+        return {
+            queued,
+            capacity,
+            availableSlots,
+            unlimited,
+            queuedByType,
+            vehicleCapacity: { ...this.treeCrateVehicleLimits }
+        };
+    }
+
+    refreshTreeCrateSummary() {
+        const summary = this.summarizeTreeCrate();
+        this.treeCrateSummary = summary;
+        return summary;
+    }
+
+    cloneTransportMetrics(metrics) {
+        if (!metrics || typeof metrics !== 'object') {
+            return null;
+        }
+        return {
+            mode: metrics.mode || this.activeVehicle,
+            location: metrics.location || this.truckLocation,
+            canSell: Boolean(metrics.canSell),
+            fruit: {
+                loaded: Math.max(0, Number(metrics.fruit?.loaded) || 0),
+                capacity: typeof metrics.fruit?.capacity === 'number'
+                    ? Math.max(0, metrics.fruit.capacity)
+                    : null,
+                percent: Math.max(0, Number(metrics.fruit?.percent) || 0),
+                unlimited: Boolean(metrics.fruit?.unlimited)
+            },
+            tree: {
+                queued: Math.max(0, Number(metrics.tree?.queued) || 0),
+                capacity: typeof metrics.tree?.capacity === 'number'
+                    ? Math.max(0, metrics.tree.capacity)
+                    : null,
+                availableSlots: typeof metrics.tree?.availableSlots === 'number'
+                    ? Math.max(0, metrics.tree.availableSlots)
+                    : null,
+                unlimited: Boolean(metrics.tree?.unlimited)
+            }
+        };
+    }
+
+    buildLocalTransportMetrics() {
+        const crateStats = this.getCrateLoadMetrics();
+        const treeSummary = this.treeCrateSummary || this.refreshTreeCrateSummary();
+        return {
+            mode: this.activeVehicle,
+            location: this.truckLocation,
+            canSell: this.computeCanSellFromState(),
+            fruit: {
+                loaded: crateStats.loaded,
+                capacity: crateStats.unlimited ? null : crateStats.capacity,
+                percent: crateStats.unlimited ? 0 : crateStats.percent,
+                unlimited: crateStats.unlimited
+            },
+            tree: {
+                queued: treeSummary.queued,
+                capacity: treeSummary.unlimited ? null : treeSummary.capacity,
+                availableSlots: treeSummary.unlimited ? null : treeSummary.availableSlots,
+                unlimited: treeSummary.unlimited
+            }
+        };
+    }
+
+    computeCanSellFromState() {
+        if (this.truckStatus?.isTraveling) {
+            return false;
+        }
+        if (this.truckLocation !== 'city') {
+            return false;
+        }
+        return Object.entries(this.truckInventory || {}).some(([type, amountRaw]) => {
+            const amount = Number(amountRaw) || 0;
+            if (amount <= 0) {
+                return false;
+            }
+            const fruitsPerCoin = this.TREE_TYPES[type]?.fruitsPerCoin || 0;
+            return fruitsPerCoin > 0 && amount >= fruitsPerCoin;
+        });
+    }
+
     buildEmptyVehicleState(mode = 'truck') {
         return {
             mode,
@@ -1568,7 +1767,7 @@ export default class RichGardenGame {
         return prepared;
     }
 
-    applyVehicleState(vehicle) {
+    applyVehicleState(vehicle, options = {}) {
         if (!this.transport) {
             return false;
         }
@@ -1595,6 +1794,10 @@ export default class RichGardenGame {
             this.timerConfig.truckTravel = vehicleState.travelSeconds;
         }
         this.transport.activeMode = vehicle;
+        this.refreshTreeCrateSummary();
+        if (!options.preserveMetrics) {
+            this.transportMetrics = this.buildLocalTransportMetrics();
+        }
         return true;
     }
 
@@ -1650,51 +1853,110 @@ export default class RichGardenGame {
         return plantable;
     }
 
-    canBuyTree(cellIndex) {
-        const bananaTargets = Array.isArray(this.plantingSummary?.banana?.targets)
-            ? this.plantingSummary.banana.targets
-            : null;
-        if (bananaTargets && !bananaTargets.includes(cellIndex)) {
+            getTreeShopBlockers(summaryOverride = null) {
+                const summary = summaryOverride || this.treeCrateSummary || this.refreshTreeCrateSummary();
+                const blockers = [];
+                const vehicleLabel = this.getActiveVehicleLabel();
+
+                if (this.truckStatus?.isTraveling) {
+                    blockers.push(`${vehicleLabel} is traveling. Wait until it reaches the city.`);
+                }
+                if (!this.truckStatus?.isTraveling && this.truckLocation !== 'city') {
+                    blockers.push(`${vehicleLabel} must be at the city to buy new trees.`);
+                }
+
+                const hasCapacity = summary?.unlimited
+                    || (Number(summary?.availableSlots) || 0) > 0;
+                if (!hasCapacity) {
+                    blockers.push('Tree crate is full. Deliver or plant staged saplings first.');
+                }
+
+                return blockers;
+            }
+
+            getTreePurchaseStatus(treeType = 'banana', summaryOverride = null, generalOverride = null) {
+                const summary = summaryOverride || this.treeCrateSummary || this.refreshTreeCrateSummary();
+                const generalBlockers = Array.isArray(generalOverride)
+                    ? [...generalOverride]
+                    : this.getTreeShopBlockers(summary);
+                const config = this.TREE_TYPES?.[treeType] || null;
+                const perTierBlockers = [];
+                const plantingInfo = this.plantingSummary?.[treeType] || null;
+                let canPlant = Boolean(plantingInfo?.canPlant);
+                if (!plantingInfo) {
+                    canPlant = this.getOpenGardenSlots() > 0;
+                }
+                const plantingTargets = Array.isArray(plantingInfo?.targets) ? plantingInfo.targets : [];
+                const queuedMap = Object.keys(this.totalQueuedByType || {}).length > 0
+                    ? this.totalQueuedByType
+                    : summary?.globalQueuedByType || summary?.queuedByType || {};
+                const queuedCount = Number(queuedMap?.[treeType]) || 0;
+
+                let remainingSlots = plantingTargets.length;
+                if (queuedCount > 0) {
+                    remainingSlots = Math.max(0, remainingSlots - queuedCount);
+                }
+
+                if (!config) {
+                    perTierBlockers.push('Tree type unavailable right now.');
+                } else {
+                    if (this.coins < config.cost) {
+                        perTierBlockers.push('Not enough coins for this tree.');
+                    }
+                    if (!canPlant) {
+                        perTierBlockers.push('Garden already full of equal or higher-tier trees.');
+                    } else if (remainingSlots <= 0) {
+                        canPlant = false;
+                        perTierBlockers.push('All matching slots are already reserved by staged saplings. Deliver or plant them first.');
+                    }
+                }
+
+                return {
+                    summary,
+                    config,
+                    plantingInfo,
+                    canPlant,
+                    targets: Array.isArray(plantingInfo?.targets) ? plantingInfo.targets : [],
+                    queued: queuedCount,
+                    generalBlockers,
+                    perTierBlockers,
+                    allowed: generalBlockers.length === 0 && perTierBlockers.length === 0
+                };
+            }
+
+            canBuyTree(treeType = 'banana') {
+                const status = this.getTreePurchaseStatus(treeType);
+                return Boolean(status?.allowed);
+            }
+
+    getOpenGardenSlots() {
+        return this.garden.filter((tree) => !tree).length;
+    }
+
+    hasTreeCrateCapacity() {
+        if (!this.treeCrateSummary) {
+            this.refreshTreeCrateSummary();
+        }
+        if (!this.treeCrateSummary) {
             return false;
         }
-        // Must buy sequentially from left to right
-        for (let i = 0; i < cellIndex; i++) {
-            if (!this.garden[i]) return false;
-        }
-        // Allow buying first tree at farm, others require city
-        const isFirstTree = cellIndex === 0 && this.garden.every(tree => tree === null);
-        const canAfford = this.coins >= this.TREE_TYPES.banana.cost;
-        return canAfford && ((isFirstTree && this.truckLocation === 'farm') || this.truckLocation === 'city');
+        return this.treeCrateSummary.unlimited
+            || (Number(this.treeCrateSummary.availableSlots) || 0) > 0;
     }
 
-    canUpgradeTree(cellIndex) {
-        const tree = this.garden[cellIndex];
-        if (!tree) return false;
-
-        const currentLevel = this.TREE_TYPES[tree.type].level;
-        if (currentLevel >= 6) return false; // Max level
-
-        const nextLevel = currentLevel + 1;
-
-        // Find the highest level tree currently owned
-        const maxOwnedLevel = Math.max(...this.garden.filter(t => t).map(t => this.TREE_TYPES[t.type].level));
-
-        // Check if trying to upgrade to a level higher than currently owned
-        if (nextLevel > maxOwnedLevel) {
-            // To unlock a new level, need 10 trees at the previous level
-            const prevLevelTrees = this.garden.filter(t => t && this.TREE_TYPES[t.type].level === currentLevel).length;
-            if (prevLevelTrees < 10) return false;
-        }
-        // If upgrading to a level you already own, or unlocking a new level with 10 prev level trees, allow it
-
-        const nextType = Object.values(this.TREE_TYPES).find(t => t.level === currentLevel + 1);
-        return this.truckLocation === 'city' && this.coins >= nextType.cost;
-    }
+            canOpenTreeShop() {
+                const summary = this.treeCrateSummary || this.refreshTreeCrateSummary();
+                return this.getTreeShopBlockers(summary).length === 0;
+            }
 
     // Game actions
-    async buyTree(cellIndex) {
-        if (!this.canBuyTree(cellIndex)) {
-            this.showGameMessage('Cannot buy tree here!', 'error');
+    async buyTree(treeType = 'banana') {
+        const status = this.getTreePurchaseStatus(treeType);
+        if (!status.allowed) {
+            const reason = status.perTierBlockers?.[0]
+                || status.generalBlockers?.[0]
+                || 'Tree purchases are unavailable right now.';
+            this.showGameMessage(reason, 'info');
             return;
         }
 
@@ -1705,18 +1967,16 @@ export default class RichGardenGame {
             const response = await fetch('/api/rich-garden/buy_tree', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, queueOnly: true, vehicle: this.activeVehicle })
+                body: JSON.stringify({ username, queueOnly: true, vehicle: this.activeVehicle, treeType })
             });
 
             const data = await response.json();
             if (data.success) {
                 this.syncStateFromPayload(data);
                 this.updateUI();
-                this.showGameMessage('Tree purchased and staged in crate!', 'success');
-                const planted = await this.plantTreeFromCrate(cellIndex, 'banana');
-                if (!planted) {
-                    this.showGameMessage('Tree is waiting in the crate—plant it from the panel!', 'info');
-                }
+                const treeName = this.TREE_TYPES?.[treeType]?.name || 'Tree';
+                this.showGameMessage(`${treeName} purchased and staged in the crate! Plant it from the farm when ready.`, 'success');
+                this.showGameMessage('Trees never auto-plant—use Plant from Crate once you are back at the farm.', 'info');
                 setTimeout(() => this.refreshGameStatus(), 1000);
             } else {
                 this.showGameMessage(data.error || 'Failed to buy tree', 'error');
@@ -1727,37 +1987,6 @@ export default class RichGardenGame {
         }
     }
 
-    async upgradeTree(cellIndex) {
-        if (!this.canUpgradeTree(cellIndex)) {
-            this.showGameMessage('Cannot upgrade tree yet!', 'error');
-            return;
-        }
-
-        try {
-            const username = window.authManager?.currentUser?.username;
-            if (!username) return;
-
-            const response = await fetch('/api/rich-garden/upgrade_tree', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, cellIndex, vehicle: this.activeVehicle })
-            });
-
-            const data = await response.json();
-            if (data.success) {
-                this.syncStateFromPayload(data);
-                this.updateUI();
-                this.showGameMessage('Tree upgraded!', 'success');
-                setTimeout(() => this.refreshGameStatus(), 1000);
-            } else {
-                this.showGameMessage(data.error || 'Failed to upgrade tree', 'error');
-            }
-        } catch (error) {
-            console.error('Upgrade tree error:', error);
-            this.showGameMessage('Failed to upgrade tree', 'error');
-        }
-    }
-
     async plantTreeFromCrate(cellIndex, treeType) {
         if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex >= GARDEN_SIZE) {
             this.showGameMessage('Invalid plot selected for planting', 'error');
@@ -1765,6 +1994,16 @@ export default class RichGardenGame {
         }
 
         const plantableTypes = this.getPlantableTypesForCell(cellIndex);
+        if (plantableTypes.length === 0) {
+            this.showGameMessage('No staged saplings are ready for this plot yet.', 'info');
+            return false;
+        }
+
+        const nextType = plantableTypes[0];
+        if (treeType !== nextType) {
+            treeType = nextType;
+        }
+
         if (!plantableTypes.includes(treeType)) {
             this.showGameMessage('No matching tree staged for this plot', 'error');
             return false;
@@ -1798,78 +2037,81 @@ export default class RichGardenGame {
         }
     }
 
-    async collectTree(cellIndex) {
-        const tree = this.garden[cellIndex];
-        if (!tree) {
-            this.showGameMessage('No tree in this cell!', 'error');
-            return;
-        }
-
-        if (tree.phase !== 'ready') {
-            this.showGameMessage('Tree not ready for collection!', 'error');
-            return;
-        }
-
+    async collectReadyTrees(cellIndices = null) {
         try {
             const username = window.authManager?.currentUser?.username;
-            if (!username) return;
+            if (!username) return false;
 
-            const response = await fetch('/api/rich-garden/collect_tree', {
+            const payload = { username };
+            if (Array.isArray(cellIndices) && cellIndices.length > 0) {
+                payload.cells = cellIndices;
+            }
+
+            const response = await fetch('/api/rich-garden/collect_ready', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, cellIndex })
+                body: JSON.stringify(payload)
             });
 
             const data = await response.json();
             if (data.success) {
                 this.syncStateFromPayload(data);
                 this.updateUI();
-                const collectedTotals = data.collected || {};
-                const totalFruits = Object.values(collectedTotals).reduce((sum, amount) => sum + amount, 0);
-                if (totalFruits > 0) {
-                    this.showGameMessage(`Collected ${totalFruits.toLocaleString()} fruits and moved them into farm inventory.`, 'success');
+
+                const collectedTotal = this.getTotalResources(data.collected || {});
+                if (collectedTotal > 0) {
+                    this.showGameMessage(`Collected ${collectedTotal.toLocaleString()} fruits from the garden.`, 'success');
                 } else {
-                    this.showGameMessage('Harvest complete! Fruits added to farm inventory.', 'success');
+                    this.showGameMessage('Garden synchronized with the latest harvest state.', 'info');
                 }
-                // Server response already includes refreshed state
-            } else {
-                this.showGameMessage(data.error || 'Failed to start collection', 'error');
+
+                setTimeout(() => this.refreshGameStatus(), 1000);
+                return true;
             }
+
+            this.showGameMessage(data.error || 'Failed to collect trees', 'error');
+            return false;
         } catch (error) {
-            console.error('Collect tree error:', error);
-            this.showGameMessage('Failed to collect tree', 'error');
+            console.error('Collect ready trees error:', error);
+            this.showGameMessage('Failed to collect trees', 'error');
+            return false;
         }
     }
 
     async collectAllReady() {
-        const readyTrees = this.garden
-            .map((tree, index) => ({ tree, index }))
-            .filter(({ tree }) => tree && tree.phase === 'ready');
+        const readyCells = this.garden
+            .map((tree, index) => (tree && tree.phase === 'ready' ? index : null))
+            .filter((index) => index !== null);
 
-        if (readyTrees.length === 0) {
-            this.showGameMessage('No trees ready for collection!', 'info');
+        if (readyCells.length === 0) {
+            this.showGameMessage('No trees are ready to collect yet.', 'info');
             return;
         }
 
-        for (const { index } of readyTrees) {
-            await this.collectTree(index);
+        await this.collectReadyTrees(readyCells);
+    }
+
+    async collectTree(cellIndex) {
+        if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex >= GARDEN_SIZE) {
+            this.showGameMessage('Invalid plot selected for collection', 'error');
+            return;
         }
+        const tree = this.garden[cellIndex];
+        if (!tree || tree.phase !== 'ready') {
+            this.showGameMessage('This tree is not ready to harvest yet.', 'info');
+            return;
+        }
+        await this.collectReadyTrees([cellIndex]);
     }
 
     async loadTruck() {
         const vehicleLabel = this.getActiveVehicleLabel();
         if (this.truckStatus?.isTraveling) {
-            this.showGameMessage(`${vehicleLabel} is traveling right now!`, 'error');
+            this.showGameMessage(`${vehicleLabel} is traveling and cannot be loaded.`, 'error');
             return;
         }
-
         if (this.truckLocation !== 'farm') {
-            this.showGameMessage(`${vehicleLabel} must be at the farm to load!`, 'error');
-            return;
-        }
-
-        if (this.getTotalResources(this.inventory) === 0) {
-            this.showGameMessage('No fruits available to load!', 'info');
+            this.showGameMessage(`${vehicleLabel} must be at the farm to load crates.`, 'error');
             return;
         }
 
@@ -1967,9 +2209,12 @@ export default class RichGardenGame {
             return;
         }
 
-        const totalCargo = this.getTotalResources(this.truckInventory);
-        if (totalCargo === 0) {
-            this.showGameMessage('No fruits loaded on the vehicle!', 'error');
+        const backendSellFlag = typeof this.transportMetrics?.canSell === 'boolean'
+            ? this.transportMetrics.canSell
+            : null;
+        const canSell = (backendSellFlag === true) || this.computeCanSellFromState();
+        if (!canSell) {
+            this.showGameMessage('No sellable crates loaded on the vehicle yet!', 'error');
             return;
         }
 

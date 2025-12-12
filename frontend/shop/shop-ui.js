@@ -482,9 +482,19 @@ export class ShopUI {
             const state = tier.canPlant ? 'open' : 'blocked';
             const planted = Math.max(0, tier.count || 0);
             const targets = Array.isArray(tier.targets) ? tier.targets.length : 0;
-            const statusLabel = tier.canPlant
-                ? (targets > 0 ? `${targets} upgrade slot${targets === 1 ? '' : 's'} ready` : 'Ready to plant')
-                : 'Maxed';
+            const placement = tier.placement || null;
+            let statusLabel = 'Ready to plant';
+            if (!tier.canPlant) {
+                statusLabel = 'Maxed';
+            } else if (tier.note) {
+                statusLabel = tier.note;
+            } else if (placement === 'empty-slot') {
+                statusLabel = targets > 0
+                    ? `${targets} empty slot${targets === 1 ? '' : 's'} available`
+                    : 'Empty slots available';
+            } else if (targets > 0) {
+                statusLabel = `${targets} upgrade slot${targets === 1 ? '' : 's'} ready`;
+            }
             return `
                 <div class="garden-tier" data-state="${state}">
                     <div class="garden-tier__label">
@@ -593,12 +603,30 @@ export class ShopUI {
         const canPlant = context.canPlant !== false;
         const targets = Array.isArray(context.targets) ? context.targets : [];
         const emptySlots = Math.max(0, context.garden?.emptySlots ?? 0);
+        const availabilityNote = context.availability?.note;
+        const emptyTargets = Array.isArray(context.emptyTargets)
+            ? context.emptyTargets
+            : Array.isArray(context.availability?.emptyTargets)
+                ? context.availability.emptyTargets
+                : [];
+        const upgradeTargets = Array.isArray(context.upgradeTargets)
+            ? context.upgradeTargets
+            : Array.isArray(context.availability?.upgradeTargets)
+                ? context.availability.upgradeTargets
+                : [];
+        const placement = context.placement || context.availability?.placement || null;
         let detail = 'Ready to plant';
         if (canPlant) {
-            if (emptySlots > 0) {
-                detail = `${emptySlots} empty slot${emptySlots === 1 ? '' : 's'} available`;
-            } else if (targets.length > 0) {
-                const preview = targets
+            if (availabilityNote) {
+                detail = availabilityNote;
+            } else if (placement === 'empty-slot' || emptyTargets.length > 0) {
+                const count = emptyTargets.length || emptySlots;
+                detail = count > 0
+                    ? `${count} empty slot${count === 1 ? '' : 's'} available`
+                    : 'Empty slots available';
+            } else if (upgradeTargets.length > 0 || targets.length > 0) {
+                const previewSource = upgradeTargets.length > 0 ? upgradeTargets : targets;
+                const preview = previewSource
                     .slice(0, 3)
                     .map((slot) => {
                         const index = Number(slot);
@@ -606,7 +634,8 @@ export class ShopUI {
                     })
                     .filter(Boolean)
                     .join(', ');
-                detail = `Upgrade ${targets.length} slot${targets.length === 1 ? '' : 's'}${preview ? ` (${preview})` : ''}`;
+                const total = previewSource.length;
+                detail = `Upgrade ${total} slot${total === 1 ? '' : 's'}${preview ? ` (${preview})` : ''}`;
             }
         } else {
             detail = 'All planted trees are already equal or higher tier.';

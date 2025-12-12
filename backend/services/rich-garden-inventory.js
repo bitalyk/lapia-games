@@ -261,15 +261,19 @@ export class FarmPlanner {
         return slots;
     }
 
-    getUpgradeSlots(targetLevel) {
+    getDirectUpgradeSlots(targetLevel) {
         const slots = [];
+        if (!Number.isFinite(targetLevel) || targetLevel <= 1) {
+            return slots;
+        }
+        const predecessorLevel = targetLevel - 1;
         for (let i = 0; i < this.size; i += 1) {
             const plot = this.garden[i];
             if (!plot) {
                 continue;
             }
             const currentLevel = this.treeDefinitions[plot.type]?.level ?? 0;
-            if (currentLevel < targetLevel) {
+            if (currentLevel === predecessorLevel) {
                 slots.push(i);
             }
         }
@@ -285,10 +289,10 @@ export class FarmPlanner {
         if (!targetLevel) {
             return false;
         }
-        if (this.hasEmptySlot()) {
-            return true;
+        if (targetLevel === 1) {
+            return this.hasEmptySlot();
         }
-        return this.getUpgradeSlots(targetLevel).length > 0;
+        return this.getDirectUpgradeSlots(targetLevel).length > 0;
     }
 
     getPlantingTargets(treeType) {
@@ -300,11 +304,10 @@ export class FarmPlanner {
         if (!targetLevel) {
             return [];
         }
-        const emptySlots = this.getEmptySlots();
-        if (emptySlots.length > 0) {
-            return emptySlots;
+        if (targetLevel === 1) {
+            return this.getEmptySlots();
         }
-        return this.getUpgradeSlots(targetLevel);
+        return this.getDirectUpgradeSlots(targetLevel);
     }
 
     getPlantingSummary() {
