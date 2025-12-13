@@ -95,6 +95,10 @@ const goldenMineProgressSchema = new mongoose.Schema({
   coins: { type: Number, default: 1000 },
   mines: { type: [mineSchema], default: () => Array(10).fill(null) },
   inventory: { type: goldenMineInventorySchema, default: () => ({}) },
+  mineInventory: { type: goldenMineInventorySchema, default: () => ({}) },
+  factoryInventory: { type: goldenMineInventorySchema, default: () => ({}) },
+  transport: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+  productionFlowVersion: { type: Number, default: 1 },
   truckLocation: { type: String, enum: ['mine', 'traveling_to_factory', 'factory', 'traveling_to_mine'], default: 'mine' },
   truckDepartureTime: { type: Date, default: null },
   truckCargo: { type: goldenMineInventorySchema, default: () => ({}) },
@@ -202,7 +206,8 @@ const richGardenUpgradeSchema = new mongoose.Schema({
 
 const goldenMineUpgradeSchema = new mongoose.Schema({
   helicopterTransport: { type: Boolean, default: false },
-  autoCollect: { type: Boolean, default: false }
+  autoCollect: { type: Boolean, default: false },
+  noCrateLimits: { type: Boolean, default: false }
 }, { _id: false });
 
 const catChessUpgradeSchema = new mongoose.Schema({
@@ -503,6 +508,10 @@ const userSchema = new mongoose.Schema({
       coins: 1000,
       mines: Array(10).fill(null),
       inventory: {},
+      mineInventory: {},
+      factoryInventory: {},
+      transport: {},
+      productionFlowVersion: 1,
       truckLocation: 'mine',
       truckDepartureTime: null,
       truckCargo: {},

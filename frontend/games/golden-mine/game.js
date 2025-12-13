@@ -7,9 +7,14 @@ export default class GoldenMineGame {
         this.coins = 1000;
         this.mines = Array(MAX_MINES).fill(null);
         this.inventory = {};
+        this.mineInventory = {};
+        this.factoryInventory = {};
         this.truckCargo = {};
         this.truckLocation = 'mine';
         this.truckDepartureTime = null;
+        this.transport = { vehicles: {} };
+        this.productionFlow = { version: 1, stages: [] };
+        this.factorySalesHistory = [];
         this.gameManager = null;
         this.gameLoopInterval = null;
         this.statusRefreshInterval = null;
@@ -23,6 +28,11 @@ export default class GoldenMineGame {
             nickel: { cost: 25000, orePerSecond: 10, orePerCoin: 40, level: 4, name: 'Nickel Mine' },
             silver: { cost: 100000, orePerSecond: 20, orePerCoin: 20, level: 5, name: 'Silver Mine' },
             golden: { cost: 500000, orePerSecond: 50, orePerCoin: 10, level: 6, name: 'Golden Mine' }
+        };
+        this.oreTypes = Object.keys(this.MINE_TYPES);
+        this.vehicleLabels = {
+            truck: 'Main Truck',
+            helicopter: 'Helicopter'
         };
 
         this.PRODUCTION_TIME = 8 * 60 * 60;
@@ -126,31 +136,38 @@ export default class GoldenMineGame {
                 </div>
 
                 <div class="game-content">
-                    <div class="mines-section">
-                        <div class="section-header">
-                            <h2>Mine Operations</h2>
-                            <button id="gm-collect-all-btn" class="collect-all-btn" disabled>Collect All Ready</button>
+                    <div class="primary-column">
+                        <div class="mines-section">
+                            <div class="section-header">
+                                <h2>Mine Operations</h2>
+                                <button id="gm-collect-all-btn" class="collect-all-btn" disabled>Collect All Ready</button>
+                            </div>
+                            <div class="mines-grid">
+                                ${Array.from({ length: MAX_MINES }, (_, index) => `<div class="mine-slot" data-index="${index}"></div>`).join('')}
+                            </div>
                         </div>
-                        <div class="mines-grid">
-                            ${Array.from({ length: MAX_MINES }, (_, index) => `<div class="mine-slot" data-index="${index}"></div>`).join('')}
+
+                        <div class="panel-card mine-management-panel" id="gm-mine-management-panel">
+                            <div class="panel-placeholder">Loading mine inventory...</div>
                         </div>
                     </div>
 
                     <div class="sidebar">
-                        <div class="inventory">
-                            <h3>Ore Inventory</h3>
-                            <div class="empty-inventory">No ore stored</div>
+                        <div class="panel-card transport-panel" id="gm-transport-panel">
+                            <h3>Transportation</h3>
+                            <div class="panel-placeholder">Vehicles will appear after syncing.</div>
                         </div>
 
-                        <div class="truck-section">
-                            <h3>🚛 Transport Truck</h3>
-                            <div class="truck-status">At Mine</div>
-                            <div class="truck-cargo">
-                                <div class="empty-truck">Truck is empty</div>
-                            </div>
-                            <div class="truck-actions"></div>
+                        <div class="panel-card factory-panel" id="gm-factory-panel">
+                            <h3>Factory Interface</h3>
+                            <div class="panel-placeholder">No ore staged yet.</div>
                         </div>
 
+                        <div class="panel-card redeem-panel">
+                            <h3>Redeem Code</h3>
+                            <input type="text" class="redeem-input" placeholder="Enter code">
+                            <button class="redeem-btn">Redeem</button>
+                        </div>
                     </div>
                 </div>
 
@@ -229,12 +246,21 @@ export default class GoldenMineGame {
                 return;
             }
 
-            if (target.classList.contains('truck-btn')) {
-                const action = target.dataset.action;
-                if (action === 'load') this.showLoadTruckDialog();
-                if (action === 'send') this.sendTruck();
-                if (action === 'sell') this.sellOre();
-                if (action === 'return') this.returnTruck();
+            const fillBtn = target.closest('[data-fill]');
+            if (fillBtn) {
+                this.handleFillButton(fillBtn);
+                return;
+            }
+
+            const transportBtn = target.closest('[data-transport-action]');
+            if (transportBtn) {
+                this.handleTransportAction(transportBtn);
+                return;
+            }
+
+            const factoryBtn = target.closest('[data-factory-action]');
+            if (factoryBtn) {
+                this.handleFactoryAction(factoryBtn);
             }
         });
 
@@ -242,6 +268,13 @@ export default class GoldenMineGame {
         if (collectAllBtn) {
             collectAllBtn.addEventListener('click', () => this.collectAllReady());
         }
+
+        container.addEventListener('submit', (event) => {
+            if (event.target && event.target.matches('#gm-load-form')) {
+                event.preventDefault();
+                this.handleLoadFormSubmit(event.target);
+            }
+        });
 
     }
 
@@ -379,46 +412,380 @@ export default class GoldenMineGame {
                 </div>
             `;
         });
+        this.renderMineManagementPanel();
+        this.renderTransportPanel();
+        this.renderFactoryPanel();
+    }
 
-        const inventoryEl = container.querySelector('.inventory');
-        if (inventoryEl) {
-            const entries = Object.entries(this.inventory).filter(([, amount]) => (Number(amount) || 0) > 0);
-            inventoryEl.innerHTML = '<h3>Ore Inventory</h3>';
-            if (entries.length === 0) {
-                inventoryEl.innerHTML += '<div class="empty-inventory">No ore stored</div>';
-            } else {
-                entries.forEach(([type, amount]) => {
-                    inventoryEl.innerHTML += `<div class="inventory-item">${this.getMineIcon(type)} ${type}: ${(Number(amount) || 0).toLocaleString()}</div>`;
-                });
-            }
+    renderMineManagementPanel() {
+        const panel = this.gameContainer?.querySelector('#gm-mine-management-panel');
+        if (!panel) return;
+
+        const entries = this.oreTypes.map((type) => ({
+            type,
+            amount: Number(this.mineInventory?.[type] || 0)
+        }));
+        const totalOre = entries.reduce((sum, entry) => sum + entry.amount, 0);
+        const maxValue = Math.max(1, ...entries.map((entry) => entry.amount));
+
+        panel.innerHTML = `
+            <div class="panel-header">
+                <div>
+                    <h3>Mine Inventory</h3>
+                    <p class="panel-subtitle">${totalOre > 0 ? `${totalOre.toLocaleString()} ore waiting for shipment` : 'Collect ore to start filling crates.'}</p>
+                </div>
+                <div class="flow-stage-pill">${this.formatStageLabel('mine_inventory')}</div>
+            </div>
+            <div class="inventory-list">
+                ${entries.map((entry) => `
+                    <div class="inventory-row">
+                        <div class="ore-label">${this.getMineIcon(entry.type)} ${this.getOreLabel(entry.type)}</div>
+                        <div class="inventory-bar">
+                            <div class="inventory-fill" style="width:${maxValue ? Math.min(100, (entry.amount / maxValue) * 100) : 0}%"></div>
+                        </div>
+                        <div class="inventory-amount">${entry.amount.toLocaleString()}</div>
+                    </div>
+                `).join('')}
+            </div>
+            ${this.renderLoadForm(entries, totalOre)}
+        `;
+    }
+
+    renderLoadForm(entries, totalOre) {
+        const vehicles = Object.keys(this.transport?.vehicles || { truck: {} });
+        if (vehicles.length === 0) {
+            return '<div class="panel-placeholder">Transport unlocks soon.</div>';
         }
 
-        const truckSection = container.querySelector('.truck-section .truck-actions');
-        const truckStatusEl = container.querySelector('.truck-section .truck-status');
-        const truckCargoEl = container.querySelector('.truck-section .truck-cargo');
+        const oreOptions = entries.map(({ type, amount }) => `
+            <option value="${type}">${this.getOreLabel(type)} (${amount.toLocaleString()} available)</option>
+        `).join('');
 
-        if (truckStatusEl) {
-            truckStatusEl.textContent = this.getTruckStatusText();
+        const vehicleOptions = vehicles.map((vehicleKey) => `
+            <option value="${vehicleKey}">${this.vehicleLabels[vehicleKey] || this.getTitleCase(vehicleKey)}</option>
+        `).join('');
+
+        const disabled = totalOre <= 0 ? 'disabled' : '';
+
+        return `
+            <form id="gm-load-form" class="inventory-load-form">
+                <div class="form-field">
+                    <label for="gm-load-ore">Ore Type</label>
+                    <select id="gm-load-ore" name="oreType" ${disabled}>
+                        ${oreOptions}
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label for="gm-load-vehicle">Vehicle</label>
+                    <select id="gm-load-vehicle" name="vehicle" ${disabled}>
+                        ${vehicleOptions}
+                    </select>
+                </div>
+                <div class="form-field form-field-inline">
+                    <label for="gm-load-amount">Amount</label>
+                    <div class="input-with-action">
+                        <input type="number" id="gm-load-amount" name="amount" min="1" placeholder="0" ${disabled}>
+                        <button type="button" class="ghost-btn" data-fill="inventory" ${disabled}>Max</button>
+                    </div>
+                </div>
+                <button type="submit" class="primary-btn" ${disabled}>Load Selected Crate</button>
+                <p class="form-hint">Vehicles must be at the mine before loading.</p>
+            </form>
+        `;
+    }
+
+    renderTransportPanel() {
+        const panel = this.gameContainer?.querySelector('#gm-transport-panel');
+        if (!panel) return;
+
+        const vehicles = this.transport?.vehicles || {};
+        const vehicleKeys = Object.keys(vehicles);
+
+        if (!vehicleKeys.length) {
+            panel.innerHTML = `
+                <h3>Transportation</h3>
+                <div class="panel-placeholder">Unlock a truck to begin deliveries.</div>
+            `;
+            return;
         }
 
-        if (truckCargoEl) {
-            const cargoEntries = Object.entries(this.truckCargo).filter(([, amount]) => (Number(amount) || 0) > 0);
-            truckCargoEl.innerHTML = cargoEntries.length === 0
-                ? '<div class="empty-truck">Truck is empty</div>'
-                : cargoEntries.map(([type, amount]) => `<div>${this.getMineIcon(type)} ${type}: ${(Number(amount) || 0).toLocaleString()}</div>`).join('');
+        panel.innerHTML = `
+            <div class="panel-header">
+                <div>
+                    <h3>Transportation</h3>
+                    <p class="panel-subtitle">Crates target ${Number(this.transport?.expectedCrateCoinValue || 10000).toLocaleString()} coins of ore.</p>
+                </div>
+                <div class="flow-stage-pill">${this.formatStageLabel('vehicle_crates')}</div>
+            </div>
+            <div class="vehicle-list">
+                ${vehicleKeys.map((vehicleKey) => this.renderVehicleCard(vehicleKey, vehicles[vehicleKey])).join('')}
+            </div>
+        `;
+    }
 
-            if (truckSection) {
-                const canSend = this.truckLocation === 'mine' && cargoEntries.length > 0;
-                const atFactory = this.truckLocation === 'factory';
+    renderVehicleCard(vehicleKey, vehicle = {}) {
+        const locationMeta = this.getVehicleLocationMeta(vehicle);
+        const travel = this.getVehicleTravelProgress(vehicle);
+        const hasCargo = this.vehicleHasCargo(vehicle);
+        const sendDisabled = !hasCargo || locationMeta.state !== 'mine';
+        const returnDisabled = locationMeta.state !== 'factory';
+        const cratesHtml = (vehicle.crates || []).map((crate) => this.renderCrateRow(vehicleKey, vehicle, crate, locationMeta)).join('');
 
-                truckSection.innerHTML = `
-                    ${this.truckLocation === 'mine' ? '<button class="truck-btn" data-action="load">Load Ore</button>' : ''}
-                    ${canSend ? '<button class="truck-btn" data-action="send">Send to Factory</button>' : ''}
-                    ${atFactory ? '<button class="truck-btn" data-action="sell">Sell Ore</button>' : ''}
-                    ${atFactory ? '<button class="truck-btn" data-action="return">Return to Mine</button>' : ''}
-                `;
-            }
+        return `
+            <div class="vehicle-card" data-vehicle="${vehicleKey}">
+                <div class="vehicle-header">
+                    <div>
+                        <div class="vehicle-name">${this.vehicleLabels[vehicleKey] || this.getTitleCase(vehicleKey)}</div>
+                        <div class="vehicle-meta">Crate x${vehicle.crateCapacityMultiplier || 1} • Travel ${this.formatDuration(vehicle.travelTimeSeconds || this.TRUCK_TRAVEL_TIME)}</div>
+                    </div>
+                    <div class="vehicle-badge ${locationMeta.state}">${locationMeta.label}</div>
+                </div>
+                ${travel ? `
+                    <div class="travel-progress">
+                        <div class="travel-label">${locationMeta.travelLabel}</div>
+                        <div class="travel-bar">
+                            <div class="travel-fill" style="width:${travel.percent}%"></div>
+                        </div>
+                        <div class="travel-eta">ETA ${this.formatDuration(travel.remainingSeconds)}</div>
+                    </div>
+                ` : ''}
+                <div class="vehicle-crates">
+                    ${cratesHtml}
+                </div>
+                <div class="vehicle-actions">
+                    <button type="button" class="primary-btn" data-transport-action="send" data-vehicle="${vehicleKey}" ${sendDisabled ? 'disabled' : ''}>Send to Factory</button>
+                    <button type="button" class="secondary-btn" data-transport-action="return" data-vehicle="${vehicleKey}" ${returnDisabled ? 'disabled' : ''}>Return to Mine</button>
+                </div>
+            </div>
+        `;
+    }
+
+    renderCrateRow(vehicleKey, vehicle, crate, locationMeta) {
+        const capacity = Number(crate.capacity) || 0;
+        const amount = Number(crate.amount) || 0;
+        const unlimited = crate.unlimited;
+        const percent = unlimited
+            ? 100
+            : capacity > 0
+                ? Math.max(0, Math.min(100, (amount / capacity) * 100))
+                : 0;
+        const canUnloadToFactory = locationMeta.state === 'factory';
+        const canUnloadToMine = locationMeta.state === 'mine';
+        let unloadButton = '';
+
+        if ((canUnloadToFactory || canUnloadToMine) && amount > 0) {
+            const target = canUnloadToFactory ? 'factoryInventory' : 'mineInventory';
+            const label = canUnloadToFactory ? 'Unload to Factory' : 'Unload to Mine';
+            unloadButton = `
+                <button type="button" class="ghost-btn" data-transport-action="unload" data-vehicle="${vehicleKey}" data-target="${target}" data-ore="${crate.type}">${label}</button>
+            `;
         }
+
+        return `
+            <div class="crate-row">
+                <div class="crate-label">${this.getMineIcon(crate.type)} ${this.getOreLabel(crate.type)}</div>
+                <div class="crate-bar">
+                    <div class="crate-fill ${unlimited ? 'infinite' : ''}" style="width:${percent}%"></div>
+                </div>
+                <div class="crate-amount">${amount.toLocaleString()}${capacity && !unlimited ? ` / ${capacity.toLocaleString()}` : ''}</div>
+                ${unloadButton}
+            </div>
+        `;
+    }
+
+    renderFactoryPanel() {
+        const panel = this.gameContainer?.querySelector('#gm-factory-panel');
+        if (!panel) return;
+
+        const entries = this.oreTypes.map((type) => ({
+            type,
+            amount: Number(this.factoryInventory?.[type] || 0),
+            coins: this.calculateFactorySaleEstimate(type, Number(this.factoryInventory?.[type] || 0))
+        }));
+
+        const totalOre = entries.reduce((sum, entry) => sum + entry.amount, 0);
+        const totalCoins = entries.reduce((sum, entry) => sum + entry.coins, 0);
+        const historyItems = this.factorySalesHistory.map((sale) => {
+            const timestamp = sale?.timestamp ? new Date(sale.timestamp) : new Date();
+            const timeLabel = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const coins = Number(sale?.coins) || 0;
+            return `<li><span>${timeLabel}</span><span>${coins.toLocaleString()} coins</span></li>`;
+        }).join('');
+        const historyHtml = historyItems
+            ? `<ul class="history-list">${historyItems}</ul>`
+            : '<div class="empty-history">No sales yet.</div>';
+
+        const factoryVehicles = this.getVehiclesAtFactory();
+        const vehicleOptions = factoryVehicles.length > 0
+            ? factoryVehicles.map(({ key, label }) => `<option value="${key}">${label}</option>`).join('')
+            : '<option value="truck">Main Truck</option>';
+
+        const subtitleText = totalOre > 0
+            ? `${totalCoins.toLocaleString()} coins ready to claim`
+            : 'Unload crates at the factory, then sell.';
+
+        panel.innerHTML = `
+            <div class="panel-header">
+                <div>
+                    <h3>Factory Interface</h3>
+                    <p class="panel-subtitle">${subtitleText}</p>
+                </div>
+                <div class="flow-stage-pill">${this.formatStageLabel('factory_inventory')}</div>
+            </div>
+            <div class="inventory-list factory-list">
+                ${entries.map((entry) => `
+                    <div class="inventory-row">
+                        <div class="ore-label">${this.getMineIcon(entry.type)} ${this.getOreLabel(entry.type)}</div>
+                        <div class="inventory-amount">${entry.amount.toLocaleString()} ore</div>
+                        <div class="inventory-amount coins">${entry.coins.toLocaleString()} coins</div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="factory-actions">
+                <label for="gm-factory-vehicle">Sell from vehicle</label>
+                <select id="gm-factory-vehicle" ${factoryVehicles.length === 0 ? 'disabled' : ''}>
+                    ${vehicleOptions}
+                </select>
+                <button type="button" class="primary-btn" data-factory-action="sell" ${totalOre <= 0 ? 'disabled' : ''}>Sell Staged Ore</button>
+            </div>
+            <div class="factory-history">
+                <h4>Recent Sales</h4>
+                ${historyHtml}
+            </div>
+        `;
+    }
+
+    calculateFactorySaleEstimate(type, amount) {
+        const orePerCoin = this.MINE_TYPES?.[type]?.orePerCoin || 1;
+        return Math.floor(Math.max(0, Number(amount) || 0) / orePerCoin);
+    }
+
+    getVehicleLocationMeta(vehicle = {}) {
+        const location = vehicle.location || 'mine';
+        if (location === 'factory') {
+            return { state: 'factory', label: 'At Factory', travelLabel: null };
+        }
+        if (location === 'traveling_to_factory') {
+            return { state: 'traveling', label: 'Traveling', travelLabel: 'Heading to Factory' };
+        }
+        if (location === 'traveling_to_mine') {
+            return { state: 'traveling', label: 'Returning', travelLabel: 'Heading to Mine' };
+        }
+        return { state: 'mine', label: 'At Mine', travelLabel: null };
+    }
+
+    getVehicleTravelProgress(vehicle = {}) {
+        if (!vehicle.departureTime || !vehicle.travelTimeSeconds) {
+            return null;
+        }
+        const departure = new Date(vehicle.departureTime).getTime();
+        if (!departure) {
+            return null;
+        }
+        const total = Number(vehicle.travelTimeSeconds) || 1;
+        const elapsed = Math.max(0, (Date.now() - departure) / 1000);
+        const remainingSeconds = Math.max(0, Math.ceil(total - elapsed));
+        const percent = Math.max(0, Math.min(100, (elapsed / total) * 100));
+        return { percent, remainingSeconds };
+    }
+
+    vehicleHasCargo(vehicle = {}) {
+        return (vehicle.crates || []).some((crate) => Number(crate.amount) > 0);
+    }
+
+    getVehiclesAtFactory() {
+        const vehicles = this.transport?.vehicles || {};
+        return Object.entries(vehicles)
+            .filter(([, vehicle]) => vehicle?.location === 'factory')
+            .map(([key]) => ({ key, label: this.vehicleLabels[key] || this.getTitleCase(key) }));
+    }
+
+    getOreLabel(type) {
+        const fallback = type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Unknown';
+        return this.MINE_TYPES?.[type]?.name || fallback;
+    }
+
+    formatStageLabel(stageKey) {
+        const mapping = {
+            mine_inventory: 'Stage 1 · Mine Inventory',
+            vehicle_crates: 'Stage 2 · Vehicle Crates',
+            factory_inventory: 'Stage 3 · Factory Staging'
+        };
+        return mapping[stageKey] || 'Production Flow';
+    }
+
+    getTitleCase(value = '') {
+        return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    handleFillButton(button) {
+        const form = button.closest('form');
+        if (!form) return;
+        if (button.dataset.fill === 'inventory') {
+            const oreSelect = form.querySelector('select[name="oreType"]');
+            const amountInput = form.querySelector('input[name="amount"]');
+            if (!oreSelect || !amountInput) return;
+            const oreType = oreSelect.value;
+            const available = Number(this.mineInventory?.[oreType] || 0);
+            amountInput.value = available > 0 ? available : '';
+        }
+    }
+
+    handleLoadFormSubmit(form) {
+        const oreType = form.oreType?.value;
+        const amount = Number(form.amount?.value || 0);
+        const vehicle = form.vehicle?.value || 'truck';
+
+        if (!oreType || amount <= 0) {
+            this.showMessage('Enter a valid ore amount first.', 'error');
+            return;
+        }
+
+        const vehicleState = this.transport?.vehicles?.[vehicle];
+        if (!vehicleState) {
+            this.showMessage('Selected vehicle is unavailable.', 'error');
+            return;
+        }
+
+        if (vehicleState.location !== 'mine') {
+            this.showMessage('Vehicle must be at the mine to load ore.', 'error');
+            return;
+        }
+
+        this.loadTruck(oreType, amount, vehicle);
+    }
+
+    handleTransportAction(button) {
+        const action = button.dataset.transportAction;
+        const vehicle = button.dataset.vehicle || 'truck';
+        if (!action) return;
+
+        if (action === 'send') {
+            this.sendTruck(vehicle);
+            return;
+        }
+
+        if (action === 'return') {
+            this.returnTruck(vehicle);
+            return;
+        }
+
+        if (action === 'unload') {
+            const oreType = button.dataset.ore;
+            const target = button.dataset.target;
+            if (!oreType || !target) return;
+            this.unloadVehicleCrate({ vehicleKind: vehicle, oreType, targetInventory: target });
+        }
+    }
+
+    handleFactoryAction(button) {
+        const action = button.dataset.factoryAction;
+        if (action !== 'sell') {
+            return;
+        }
+        const select = this.gameContainer?.querySelector('#gm-factory-vehicle');
+        const vehicle = select?.value || 'truck';
+        this.sellOre(vehicle);
     }
 
     getMineIcon(type) {
@@ -513,6 +880,15 @@ export default class GoldenMineGame {
 
         this.mines = Array.isArray(data.mines) ? this.normalizeMines(data.mines) : Array(MAX_MINES).fill(null);
         this.inventory = this.normalizeResourceMap(data.inventory || {});
+        this.mineInventory = this.normalizeResourceMap(data.mineInventory || data.inventory || {});
+        this.factoryInventory = this.normalizeResourceMap(data.factoryInventory || {});
+        this.transport = data.transport || { vehicles: {} };
+        if (data.productionFlow) {
+            this.productionFlow = data.productionFlow;
+        }
+        if (Array.isArray(data.factorySalesHistory)) {
+            this.factorySalesHistory = data.factorySalesHistory;
+        }
         this.truckCargo = this.normalizeResourceMap(data.truckCargo || {});
         this.truckLocation = data.truckLocation || this.truckLocation || 'mine';
         this.truckDepartureTime = data.truckDepartureTime ? new Date(data.truckDepartureTime) : null;
@@ -692,10 +1068,10 @@ export default class GoldenMineGame {
         }
 
         const [type, amount] = loadable[0];
-        this.loadTruck(type, Number(amount) || 0);
+        this.loadTruck(type, Number(amount) || 0, 'truck');
     }
 
-    async loadTruck(oreType, amount) {
+    async loadTruck(oreType, amount, vehicle = 'truck') {
         try {
             const username = window.authManager?.currentUser?.username;
             if (!username) return;
@@ -703,13 +1079,13 @@ export default class GoldenMineGame {
             const response = await fetch('/api/golden-mine/load_truck', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, oreType, amount })
+                body: JSON.stringify({ username, oreType, amount, vehicle })
             });
 
             const result = await response.json();
             if (response.ok && result.success) {
                 await this.loadGameData({ silent: true });
-                this.showMessage('Ore loaded onto truck!', 'success');
+                this.showMessage('Ore loaded into vehicle!', 'success');
                 return;
             }
 
@@ -720,7 +1096,32 @@ export default class GoldenMineGame {
         }
     }
 
-    async sendTruck() {
+    async unloadVehicleCrate({ vehicleKind = 'truck', oreType, targetInventory }) {
+        try {
+            const username = window.authManager?.currentUser?.username;
+            if (!username) return;
+
+            const response = await fetch('/api/golden-mine/unload_vehicle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, vehicle: vehicleKind, oreType, target: targetInventory })
+            });
+
+            const result = await response.json();
+            if (response.ok && result.success) {
+                await this.loadGameData({ silent: true });
+                this.showMessage('Crate unloaded successfully!', 'success');
+                return;
+            }
+
+            this.showMessage(result.error || 'Failed to unload vehicle', 'error');
+        } catch (error) {
+            console.error('Unload vehicle error:', error);
+            this.showMessage('Failed to unload vehicle', 'error');
+        }
+    }
+
+    async sendTruck(vehicle = 'truck') {
         try {
             const username = window.authManager?.currentUser?.username;
             if (!username) return;
@@ -728,13 +1129,13 @@ export default class GoldenMineGame {
             const response = await fetch('/api/golden-mine/send_truck', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle })
             });
 
             const result = await response.json();
             if (response.ok && result.success) {
                 await this.loadGameData({ silent: true });
-                this.showMessage('Truck sent to factory!', 'success');
+                this.showMessage('Vehicle sent to factory!', 'success');
                 return;
             }
 
@@ -745,7 +1146,7 @@ export default class GoldenMineGame {
         }
     }
 
-    async sellOre() {
+    async sellOre(vehicle = 'truck') {
         try {
             const username = window.authManager?.currentUser?.username;
             if (!username) return;
@@ -753,13 +1154,14 @@ export default class GoldenMineGame {
             const response = await fetch('/api/golden-mine/sell_ore', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle })
             });
 
             const result = await response.json();
             if (response.ok && result.success) {
                 this.coins = result.newCoins;
                 await this.loadGameData({ silent: true });
+                this.recordFactorySale(result);
                 this.showMessage(`Ore sold for ${result.coinsEarned.toLocaleString()} coins!`, 'success');
                 return;
             }
@@ -771,7 +1173,7 @@ export default class GoldenMineGame {
         }
     }
 
-    async returnTruck() {
+    async returnTruck(vehicle = 'truck') {
         try {
             const username = window.authManager?.currentUser?.username;
             if (!username) return;
@@ -779,13 +1181,13 @@ export default class GoldenMineGame {
             const response = await fetch('/api/golden-mine/return_truck', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, vehicle })
             });
 
             const result = await response.json();
             if (response.ok && result.success) {
                 await this.loadGameData({ silent: true });
-                this.showMessage('Truck returning to mine!', 'success');
+                this.showMessage('Vehicle returning to mine!', 'success');
                 return;
             }
 
@@ -794,6 +1196,18 @@ export default class GoldenMineGame {
             console.error('Return truck error:', error);
             this.showMessage('Failed to return truck', 'error');
         }
+    }
+
+    recordFactorySale(result = {}) {
+        const coinsEarned = Number(result?.coinsEarned) || 0;
+        if (coinsEarned <= 0) {
+            return;
+        }
+        const entry = {
+            coins: coinsEarned,
+            timestamp: Date.now()
+        };
+        this.factorySalesHistory = [entry, ...this.factorySalesHistory].slice(0, 5);
     }
 
     showMessage(message, type = 'info') {

@@ -697,8 +697,9 @@ const GOLDEN_MINE_ORDER = [
 ];
 
 const GOLDEN_MINE_UPGRADES = [
-  { key: "helicopterTransport", name: "Helicopter Transport", cost: 10000, description: "Truck flight takes 5 minutes." },
-  { key: "autoCollect", name: "No Collection Timer", cost: 25000, description: "Ore transfers directly to inventory." }
+  { key: "helicopterTransport", name: "Helicopter Transport", cost: 10000, description: "Unlocks the helicopter with 5× crates and 5-minute trips." },
+  { key: "autoCollect", name: "No Collection Timer", cost: 25000, description: "Ore transfers directly to inventory." },
+  { key: "noCrateLimits", name: "No Ore Crate Limits", cost: 100000, description: "Removes ore crate capacity limits for every vehicle." }
 ];
 
 class GoldenMineShopController extends BaseShopController {
