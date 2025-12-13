@@ -281,12 +281,13 @@ function ensureInventory(progress = {}, key) {
     }
 
     const normalized = normalizeOreInventory(progress[key]);
-    if (isDifferent(progress[key], normalized)) {
+    const changed = isDifferent(progress[key], normalized);
+    if (changed) {
         progress[key] = normalized;
-        return { updated: true, inventory: normalized };
+        return { updated: true, inventory: progress[key] };
     }
 
-    return { updated: false, inventory: normalized };
+    return { updated: false, inventory: progress[key] };
 }
 
 export function ensureGoldenMineInventories(progress = {}) {

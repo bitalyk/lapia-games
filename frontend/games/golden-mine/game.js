@@ -34,6 +34,8 @@ export default class GoldenMineGame {
             truck: 'Main Truck',
             helicopter: 'Helicopter'
         };
+        this.loadVehiclePreference = 'truck';
+        this.factoryVehiclePreference = 'truck';
 
         this.PRODUCTION_TIME = 8 * 60 * 60;
         this.REST_TIME = 4 * 60 * 60;
@@ -146,13 +148,13 @@ export default class GoldenMineGame {
                                 ${Array.from({ length: MAX_MINES }, (_, index) => `<div class="mine-slot" data-index="${index}"></div>`).join('')}
                             </div>
                         </div>
-
-                        <div class="panel-card mine-management-panel" id="gm-mine-management-panel">
-                            <div class="panel-placeholder">Loading mine inventory...</div>
-                        </div>
                     </div>
 
                     <div class="sidebar">
+                        <div class="panel-card mine-management-panel" id="gm-mine-management-panel">
+                            <div class="panel-placeholder">Loading mine inventory...</div>
+                        </div>
+
                         <div class="panel-card transport-panel" id="gm-transport-panel">
                             <h3>Transportation</h3>
                             <div class="panel-placeholder">Vehicles will appear after syncing.</div>
@@ -261,6 +263,12 @@ export default class GoldenMineGame {
             const factoryBtn = target.closest('[data-factory-action]');
             if (factoryBtn) {
                 this.handleFactoryAction(factoryBtn);
+                return;
+            }
+
+            const vehicleOption = target.closest('[data-vehicle-option]');
+            if (vehicleOption) {
+                this.handleVehicleSwitch(vehicleOption);
             }
         });
 
@@ -428,7 +436,7 @@ export default class GoldenMineGame {
         const totalOre = entries.reduce((sum, entry) => sum + entry.amount, 0);
         const maxValue = Math.max(1, ...entries.map((entry) => entry.amount));
 
-        panel.innerHTML = `
+        const content = `
             <div class="panel-header">
                 <div>
                     <h3>Mine Inventory</h3>
@@ -449,10 +457,13 @@ export default class GoldenMineGame {
             </div>
             ${this.renderLoadForm(entries, totalOre)}
         `;
+
+        this.setPanelContent(panel, content);
     }
 
     renderLoadForm(entries, totalOre) {
-        const vehicles = Object.keys(this.transport?.vehicles || { truck: {} });
+        const transportVehicles = this.transport?.vehicles || { truck: {} };
+        const vehicles = Object.keys(transportVehicles);
         if (vehicles.length === 0) {
             return '<div class="panel-placeholder">Transport unlocks soon.</div>';
         }
@@ -460,36 +471,46 @@ export default class GoldenMineGame {
         const oreOptions = entries.map(({ type, amount }) => `
             <option value="${type}">${this.getOreLabel(type)} (${amount.toLocaleString()} available)</option>
         `).join('');
-
-        const vehicleOptions = vehicles.map((vehicleKey) => `
-            <option value="${vehicleKey}">${this.vehicleLabels[vehicleKey] || this.getTitleCase(vehicleKey)}</option>
-        `).join('');
-
-        const disabled = totalOre <= 0 ? 'disabled' : '';
+        const vehiclesAtMine = vehicles.filter((vehicleKey) => transportVehicles?.[vehicleKey]?.location === 'mine');
+        const hasVehicleAtMine = vehiclesAtMine.length > 0;
+        const disableOreControls = totalOre <= 0;
+        const disableAction = disableOreControls || !hasVehicleAtMine;
+        const preferencePool = hasVehicleAtMine ? vehiclesAtMine : vehicles;
+        const activeVehicle = this.resolveVehiclePreference('load', preferencePool);
+        const formHint = !hasVehicleAtMine
+            ? 'Vehicles must be at the mine before loading.'
+            : disableOreControls
+                ? 'Collect ore from mines to begin loading crates.'
+                : 'Select an ore type and choose a vehicle to load crates.';
 
         return `
             <form id="gm-load-form" class="inventory-load-form">
                 <div class="form-field">
                     <label for="gm-load-ore">Ore Type</label>
-                    <select id="gm-load-ore" name="oreType" ${disabled}>
+                    <select id="gm-load-ore" name="oreType" ${disableOreControls ? 'disabled' : ''}>
                         ${oreOptions}
                     </select>
                 </div>
                 <div class="form-field">
-                    <label for="gm-load-vehicle">Vehicle</label>
-                    <select id="gm-load-vehicle" name="vehicle" ${disabled}>
-                        ${vehicleOptions}
-                    </select>
+                    <label>Vehicle</label>
+                    ${this.renderVehicleSwitch({
+                        id: 'gm-load-vehicle-input',
+                        name: 'vehicle',
+                        vehicles: preferencePool,
+                        context: 'load',
+                        disabled: !hasVehicleAtMine,
+                        selected: activeVehicle
+                    })}
                 </div>
                 <div class="form-field form-field-inline">
                     <label for="gm-load-amount">Amount</label>
                     <div class="input-with-action">
-                        <input type="number" id="gm-load-amount" name="amount" min="1" placeholder="0" ${disabled}>
-                        <button type="button" class="ghost-btn" data-fill="inventory" ${disabled}>Max</button>
+                        <input type="number" id="gm-load-amount" name="amount" min="1" placeholder="0" ${disableOreControls ? 'disabled' : ''}>
+                        <button type="button" class="ghost-btn" data-fill="inventory" ${disableOreControls ? 'disabled' : ''}>Max</button>
                     </div>
                 </div>
-                <button type="submit" class="primary-btn" ${disabled}>Load Selected Crate</button>
-                <p class="form-hint">Vehicles must be at the mine before loading.</p>
+                <button type="submit" class="primary-btn" ${disableAction ? 'disabled' : ''}>Load Selected Crate</button>
+                <p class="form-hint">${formHint}</p>
             </form>
         `;
     }
@@ -502,14 +523,14 @@ export default class GoldenMineGame {
         const vehicleKeys = Object.keys(vehicles);
 
         if (!vehicleKeys.length) {
-            panel.innerHTML = `
+            this.setPanelContent(panel, `
                 <h3>Transportation</h3>
                 <div class="panel-placeholder">Unlock a truck to begin deliveries.</div>
-            `;
+            `);
             return;
         }
 
-        panel.innerHTML = `
+        const content = `
             <div class="panel-header">
                 <div>
                     <h3>Transportation</h3>
@@ -521,6 +542,8 @@ export default class GoldenMineGame {
                 ${vehicleKeys.map((vehicleKey) => this.renderVehicleCard(vehicleKey, vehicles[vehicleKey])).join('')}
             </div>
         `;
+
+        this.setPanelContent(panel, content);
     }
 
     renderVehicleCard(vehicleKey, vehicle = {}) {
@@ -616,15 +639,15 @@ export default class GoldenMineGame {
             : '<div class="empty-history">No sales yet.</div>';
 
         const factoryVehicles = this.getVehiclesAtFactory();
-        const vehicleOptions = factoryVehicles.length > 0
-            ? factoryVehicles.map(({ key, label }) => `<option value="${key}">${label}</option>`).join('')
-            : '<option value="truck">Main Truck</option>';
 
         const subtitleText = totalOre > 0
             ? `${totalCoins.toLocaleString()} coins ready to claim`
             : 'Unload crates at the factory, then sell.';
 
-        panel.innerHTML = `
+        const switchDisabled = factoryVehicles.length === 0;
+        const vehicleKeys = factoryVehicles.length > 0 ? factoryVehicles.map(({ key }) => key) : ['truck'];
+        const activeFactoryVehicle = this.resolveVehiclePreference('factory', vehicleKeys);
+        const content = `
             <div class="panel-header">
                 <div>
                     <h3>Factory Interface</h3>
@@ -642,15 +665,65 @@ export default class GoldenMineGame {
                 `).join('')}
             </div>
             <div class="factory-actions">
-                <label for="gm-factory-vehicle">Sell from vehicle</label>
-                <select id="gm-factory-vehicle" ${factoryVehicles.length === 0 ? 'disabled' : ''}>
-                    ${vehicleOptions}
-                </select>
+                <div class="form-field factory-switch-field">
+                    <label>Sell from vehicle</label>
+                    ${this.renderVehicleSwitch({
+                        id: 'gm-factory-vehicle-input',
+                        name: 'factoryVehicle',
+                        vehicles: vehicleKeys,
+                        context: 'factory',
+                        disabled: switchDisabled,
+                        selected: activeFactoryVehicle
+                    })}
+                </div>
                 <button type="button" class="primary-btn" data-factory-action="sell" ${totalOre <= 0 ? 'disabled' : ''}>Sell Staged Ore</button>
             </div>
             <div class="factory-history">
                 <h4>Recent Sales</h4>
                 ${historyHtml}
+            </div>
+        `;
+
+        this.setPanelContent(panel, content);
+    }
+
+    // Minimizes flicker by avoiding unnecessary DOM replacements.
+    setPanelContent(panel, html) {
+        if (!panel) {
+            return;
+        }
+        const nextContent = typeof html === 'string' ? html : '';
+        if (panel.__lastContent === nextContent) {
+            return;
+        }
+        panel.__lastContent = nextContent;
+        panel.innerHTML = nextContent;
+    }
+
+    renderVehicleSwitch({ id, name, vehicles = [], context = 'load', disabled = false, selected } = {}) {
+        if (!vehicles.length) {
+            return '';
+        }
+        const safeSelection = vehicles.includes(selected) ? selected : vehicles[0];
+        const buttons = vehicles.map((vehicleKey) => {
+            const label = this.vehicleLabels[vehicleKey] || this.getTitleCase(vehicleKey);
+            const isActive = vehicleKey === safeSelection;
+            return `
+                <button type="button"
+                        class="switch-option ${isActive ? 'is-active' : ''}"
+                        data-vehicle-option
+                        data-switch-context="${context}"
+                        data-target-input="${id}"
+                        data-vehicle-value="${vehicleKey}"
+                        ${disabled ? 'disabled' : ''}
+                        aria-pressed="${isActive}">${label}</button>
+            `;
+        }).join('');
+
+        return `
+            <div class="vehicle-switch" data-vehicle-switch data-switch-context="${context}" data-target-input="${id}">
+                ${buttons}
+                <input type="hidden" id="${id}" name="${name}" value="${safeSelection}">
             </div>
         `;
     }
@@ -718,6 +791,19 @@ export default class GoldenMineGame {
         return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
     }
 
+    resolveVehiclePreference(context, vehicles = []) {
+        if (!vehicles.length) {
+            return 'truck';
+        }
+        const key = context === 'factory' ? 'factoryVehiclePreference' : 'loadVehiclePreference';
+        let preferred = this[key];
+        if (!vehicles.includes(preferred)) {
+            preferred = vehicles[0];
+        }
+        this[key] = preferred;
+        return preferred;
+    }
+
     handleFillButton(button) {
         const form = button.closest('form');
         if (!form) return;
@@ -734,7 +820,8 @@ export default class GoldenMineGame {
     handleLoadFormSubmit(form) {
         const oreType = form.oreType?.value;
         const amount = Number(form.amount?.value || 0);
-        const vehicle = form.vehicle?.value || 'truck';
+        const vehicleInput = form.querySelector('input[name="vehicle"]');
+        const vehicle = vehicleInput?.value || this.loadVehiclePreference || 'truck';
 
         if (!oreType || amount <= 0) {
             this.showMessage('Enter a valid ore amount first.', 'error');
@@ -783,9 +870,39 @@ export default class GoldenMineGame {
         if (action !== 'sell') {
             return;
         }
-        const select = this.gameContainer?.querySelector('#gm-factory-vehicle');
-        const vehicle = select?.value || 'truck';
+        const input = this.gameContainer?.querySelector('#gm-factory-vehicle-input');
+        const vehicle = input?.value || this.factoryVehiclePreference || 'truck';
         this.sellOre(vehicle);
+    }
+
+    handleVehicleSwitch(button) {
+        if (!button || button.disabled) {
+            return;
+        }
+        const container = button.closest('[data-vehicle-switch]');
+        if (!container) {
+            return;
+        }
+        const value = button.dataset.vehicleValue;
+        if (!value) {
+            return;
+        }
+        const inputId = container.dataset.targetInput;
+        const hiddenInput = inputId ? container.querySelector(`#${inputId}`) : container.querySelector('input[type="hidden"]');
+        if (hiddenInput) {
+            hiddenInput.value = value;
+        }
+        container.querySelectorAll('[data-vehicle-option]').forEach((option) => {
+            const isActive = option === button;
+            option.classList.toggle('is-active', isActive);
+            option.setAttribute('aria-pressed', String(isActive));
+        });
+        const context = container.dataset.switchContext || 'load';
+        if (context === 'factory') {
+            this.factoryVehiclePreference = value;
+        } else {
+            this.loadVehiclePreference = value;
+        }
     }
 
     getMineIcon(type) {

@@ -247,6 +247,47 @@
     color: rgba(255, 255, 255, 0.7);
 }
 
+.vehicle-switch {
+    display: inline-flex;
+    gap: 10px;
+    padding: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    width: 100%;
+}
+
+.vehicle-switch .switch-option {
+    flex: 1;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75rem;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.65);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.vehicle-switch .switch-option.is-active {
+    background: linear-gradient(120deg, #ffe08a, #ff9d5c);
+    color: #0c131f;
+    box-shadow: 0 12px 28px rgba(255, 160, 87, 0.35);
+}
+
+.vehicle-switch .switch-option:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.factory-switch-field .vehicle-switch {
+    width: auto;
+}
+
 .inventory-load-form select,
 .inventory-load-form input {
     border: 1px solid rgba(255, 255, 255, 0.2);
